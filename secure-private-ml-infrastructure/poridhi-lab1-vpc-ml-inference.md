@@ -478,3 +478,19 @@ This lab demonstrates several core security and architecture principles:
 - Add **model versioning** with S3 prefixes and dynamic model selection.
 - Extend with a **third VPC** (e.g. analytics VPC) connected via the same TGW.
 
+## Conclusion
+
+You have completed **Lab 1: VPC-Isolated ML Inference Endpoint** and built a production-grade, multi-VPC architecture that fully isolates a Vision Transformer inference server from the public internet while keeping it reachable to authorized internal services through AWS Transit Gateway. Across this lab you practiced the full lifecycle of a secure AWS network design: creating isolated VPCs, configuring private subnets with no public IP, attaching both VPCs to a Transit Gateway, writing route tables with no default internet route, locking down Security Groups to least-privilege CIDRs, delivering model weights through S3 with IAM roles (no static credentials), accessing private EC2 instances via SSM Session Manager, and verifying the model is reachable internally while the internet is provably blocked.
+
+The pattern you built here: S3 + IAM for model delivery, two private VPCs joined by a Transit Gateway, and zero public attack surface: is the same one used by banks, hospitals, and SaaS companies to host proprietary ML models without exposing them to the open internet. The same architecture scales horizontally by adding more subnets, Availability Zones, or even additional VPCs (analytics, training, serving) all connected through the same TGW. In the next labs you will extend this foundation to hybrid on-premises scenarios, multi-account deployments, and full MLOps pipelines.
+
+## Additional Resources
+
+- [AWS Transit Gateway Documentation](https://docs.aws.amazon.com/vpc/latest/tgw/what-is-transit-gateway.html)
+- [VPC Route Tables](https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html)
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
+- [Hugging Face Transformers](https://huggingface.co/docs/transformers/index)
+- [AWS Systems Manager Session Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html)
+- [AWS S3 Block Public Access](https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-best-practices.html)
+- [Poridhi Labs](https://www.poridhi.io/)
+
