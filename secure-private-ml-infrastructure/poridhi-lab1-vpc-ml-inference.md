@@ -41,8 +41,6 @@ By the end of this lab, you will be able to:
 - Validate that the model endpoint is **completely inaccessible from the public internet**.
 - Build a **secure, production-ready ML inference architecture**.
 
-## Prerequisites
-
 
 
 ## Prologue
