@@ -482,5 +482,5 @@ This lab demonstrates several core security and architecture principles:
 
 You have completed **Lab 1: VPC-Isolated ML Inference Endpoint** and built a production-grade, multi-VPC architecture that fully isolates a Vision Transformer inference server from the public internet while keeping it reachable to authorized internal services through AWS Transit Gateway. Across this lab you practiced the full lifecycle of a secure AWS network design: creating isolated VPCs, configuring private subnets with no public IP, attaching both VPCs to a Transit Gateway, writing route tables with no default internet route, locking down Security Groups to least-privilege CIDRs, delivering model weights through S3 with IAM roles (no static credentials), accessing private EC2 instances via SSM Session Manager, and verifying the model is reachable internally while the internet is provably blocked.
 
-T
+
 
