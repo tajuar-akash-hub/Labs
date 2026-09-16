@@ -1,13 +1,10 @@
-`AWS_Networking_Fundamentals_Preparation_Notes.md`
-
-````markdown
 # AWS Networking Fundamentals: Preparation Notes
 
 ## Purpose
 
 These notes collect the networking fundamentals discussed before working with AWS VPC and EC2 networking labs.
 
-BasicAwsNetworkingThe goal is to understand **why each AWS networking component exists**, not just memorize AWS console steps.
+The goal is to understand **why each AWS networking component exists**, not just memorize AWS console steps.
 
 ---
 
@@ -52,7 +49,7 @@ Example:
 ```text
 10.0.0.5
 192.168.1.10
-````
+```
 
 Think of it like an address for network communication.
 
@@ -2352,7 +2349,7 @@ Controls which traffic is allowed
 
 DNS
   ↓
-Converts domain names to IP addresses
+Converts human-friendly names into IP addresses
 
 TCP
   ↓
