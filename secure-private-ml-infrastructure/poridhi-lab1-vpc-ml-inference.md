@@ -82,7 +82,7 @@ Tenancy: Default
 ```text
 VPC ID: Model-VPC
 Subnet name: Model-Private-Subnet
-Availability Zone: us-east-1a
+Availability Zone: ap-southeast-1a
 IPv4 CIDR block: 10.0.1.0/24
 Auto-assign public IPv4: Disabled
 ```
@@ -92,10 +92,15 @@ Auto-assign public IPv4: Disabled
 ```text
 VPC ID: Client-VPC
 Subnet name: Client-Private-Subnet
-Availability Zone: us-east-1a
+Availability Zone: ap-southeast-1a
 IPv4 CIDR block: 10.1.1.0/24
 Auto-assign public IPv4: Disabled
+
+
+
 ```
+
+![alt text](../new_lab_diagram/image.png)
 
 ### Step 3 : Create the Transit Gateway (TGW)
 
@@ -112,6 +117,22 @@ DNS support: Enable
 ```
 
 Wait until the TGW state becomes `available` before continuing.
+
+![alt text](image.png)
+
+**What just happened?**
+
+The **AWS Transit Gateway (TGW)** acts as a central, highly available router that lets multiple VPCs talk to each other **privately** without ever touching the public internet. Think of it as a private switchboard inside AWS : once both VPCs are attached, traffic flows VPC-to-VPC over AWS's internal backbone.
+
+Key points about this TGW:
+- **Amazon side ASN (64512)** : A private BGP Autonomous System Number used internally for routing between attachments. You don't interact with BGP directly; AWS handles it.
+- **Auto accept shared attachments** : If you later share this TGW with another AWS account, attachments are accepted automatically. For this single-account lab, this is harmless but convenient.
+- **Default route table association + propagation** : Every attachment is automatically associated with (and propagates routes into) the TGW's default route table. This is why you don't need to manually create TGW route tables for this lab.
+- **DNS support** : Allows DNS hostnames to resolve across VPCs through the TGW (useful if you later use private DNS names instead of raw IPs).
+
+The TGW itself has **no internet gateway, no NAT, no public IP** : it's a pure Layer-3 routing construct. This is exactly why using a TGW keeps your model endpoint unreachable from the public internet.
+
+After creation, you should see the TGW in the console with state transitioning from `pending` → `available` (usually 1–3 minutes). Do not proceed until the state reads `available`; otherwise attachments will fail.
 
 ### Step 4 : Attach Both VPCs to the Transit Gateway
 
@@ -136,6 +157,18 @@ Subnet IDs: Client-Private-Subnet
 ```
 
 Wait until both attachments show `available`.
+
+**What just happened?**
+
+You just created **two Transit Gateway VPC attachments** : one elastic network interface per attachment that lives inside the chosen subnet of each VPC. This is the bridge that lets traffic flow from one VPC to the other through the TGW.
+
+A few important details:
+- **Why a single subnet per attachment?** A TGW attachment is made in **one subnet per AZ** for the VPC. AWS uses that subnet's ENI as the entry/exit point for traffic going to/from that VPC. If a VPC spans multiple AZs and you want redundancy, you would create one attachment per AZ. For this lab, a single attachment in a single AZ is enough.
+- **No route is added yet.** Creating the attachment only wires the ENI; it does **not** automatically route traffic between VPCs. You still need explicit route table entries (Step 5) to actually send cross-VPC traffic through the TGW.
+- **Status lifecycle:** the attachment will go `pending` → `available` (usually 30–90 seconds). If it stays `pending` for more than 3 minutes, double-check that the TGW itself is `available` and that the subnet IDs are correct.
+- **What flows where:** once routing is configured in Step 5, any packet from `Client-VPC` (10.1.0.0/16) destined for `Model-VPC` (10.0.0.0/16) will be handed off to the TGW via the Client attachment's ENI, routed across AWS's private backbone, and delivered to the Model attachment's ENI. The packet never leaves AWS's network.
+
+You should now have a fully wired (but not yet routed) TGW topology. The next step adds the actual route tables that direct traffic through it.
 
 ### Step 5 : Configure Route Tables
 
@@ -182,7 +215,7 @@ S3 → Create bucket:
 
 ```text
 Bucket name: ml-model-weights-<unique-name>
-Region: us-east-1
+Region: ap-southeast-1
 Block all public access: ON (very important)
 ```
 
