@@ -71,6 +71,10 @@ IPv4 CIDR block: 10.1.0.0/16
 Tenancy: Default
 ```
 
+![alt text](../new_lab_diagram/6.png)
+
+
+
 ### Step 2 : Create Private Subnets in Each VPC
 
 **Model Private Subnet:**
