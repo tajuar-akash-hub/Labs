@@ -12,7 +12,7 @@ The architecture uses **AWS Transit Gateway** with **BGP-style route propagation
 
 This is the canonical pattern for **multi-region active-passive ML** that you see at companies like Stripe, Robinhood, and Datadog when they serve model-backed APIs that cannot tolerate regional downtime.
 
-![alt text](../secure-private-ml-infrastructure\lab2-multi-region-ml-inference_1.svg)
+![alt text](/secure-private-ml-infrastructure\lab2-multi-region-ml-inference_1.svg)
 
 
 
