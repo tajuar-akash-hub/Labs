@@ -138,6 +138,10 @@ After creation, you should see the TGW in the console with state transitioning f
 
 Transit Gateways → Transit Gateway Attachments → Create attachment:
 
+
+![alt text](image-1.png)
+
+
 **Attachment 1 (Model VPC):**
 
 ```text
@@ -155,6 +159,8 @@ Transit Gateway: ML-Inference-TGW
 VPC ID: Client-VPC
 Subnet IDs: Client-Private-Subnet
 ```
+
+![alt text](image-2.png)
 
 Wait until both attachments show `available`.
 
