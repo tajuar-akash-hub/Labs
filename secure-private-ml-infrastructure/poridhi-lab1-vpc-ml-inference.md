@@ -196,6 +196,8 @@ Destination     Target
 0.0.0.0/0       (no route)   ← IMPORTANT: no internet
 ```
 
+![alt text](image-3.png)
+
 ### Step 6 : Create Security Groups
 
 **Model-SG (attached to Model EC2):**
