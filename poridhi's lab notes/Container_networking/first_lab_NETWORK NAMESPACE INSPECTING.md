@@ -984,4 +984,3 @@ The key idea to carry into container networking is:
 > **A network namespace creates an isolated network world. Interfaces provide connectivity inside that world, IP addresses identify endpoints, and the routing table determines where packets should go.**
 
 The next logical step is **connecting two network namespaces with a veth pair**, which turns isolated network worlds into communicating environments.
---
