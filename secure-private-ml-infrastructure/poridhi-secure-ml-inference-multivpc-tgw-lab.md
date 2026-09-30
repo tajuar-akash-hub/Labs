@@ -41,7 +41,7 @@ AWS Cloud
 └── Public Internet  ← ❌ Not Accessible (No public IP, no IGW)
 ```
 
-### Architecture Explanation
+### Architecture Explanation-
 
 **Model VPC (VPC 1):** Contains a private subnet with an EC2 instance running FastAPI and a HuggingFace ViT model for image classification. This instance has **no public IP** and no route to the internet. Model weights are downloaded from S3 on startup.
 

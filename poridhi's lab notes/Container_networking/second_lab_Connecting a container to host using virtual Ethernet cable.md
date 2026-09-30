@@ -919,6 +919,7 @@ The important sequence is:
 9. Ping between namespaces
 ```
 
+
 The central idea is:
 
 > **A network namespace provides isolation, while a veth pair provides a virtual connection between two network namespaces.**
