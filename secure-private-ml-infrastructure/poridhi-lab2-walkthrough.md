@@ -33,14 +33,31 @@ Open the WSL window (Start menu → "Ubuntu 22.04") or, on macOS, open Terminal.
 
 ```bash
 sudo apt update
-sudo apt install -y wireguard wireguard-tools docker.io docker-compose-plugin \
-  openssl dnsutils curl jq unzip python3-pip ca-certificates
+# Note: `docker-compose-plugin` is missing from the apt repos on Ubuntu 25.x
+# (codename "resolute") and some 24.10+ builds. We do not need it in this lab -
+# every container is launched with plain `docker run`. Drop it from the line
+# below if your apt complains.
+sudo apt install -y wireguard wireguard-tools docker.io \
+  openssl bind9-dnsutils curl jq unzip python3-pip ca-certificates
+# `docker.io` can fail silently on rolling releases and leave the `docker`
+# group missing. Create it manually just in case.
+sudo groupadd -f docker
 sudo usermod -aG docker $USER
-newgrp docker
-docker run --rm hello-world
+# Refresh group membership without logging out. `sg` works on every Linux,
+# even minimal Ubuntu images where `newgrp` is missing.
+sg docker -c "docker run --rm hello-world"
 ```
 
-Expected : the last line of `docker run hello-world` is "Hello from Docker!". If you see "permission denied" on `/var/run/docker.sock`, log out of the WSL/Ubuntu session and back in so the docker group membership refreshes.
+Expected : the last line of `docker run hello-world` is "Hello from Docker!".
+
+If `sg docker` reports `docker: command not found`, your `docker.io` package did not actually install. Fall back to the official Docker convenience script, which is the documented path for WSL2 distros:
+
+```bash
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+sudo sh /tmp/get-docker.sh
+sudo usermod -aG docker $USER
+sg docker -c "docker run --rm hello-world"
+```
 
 On macOS, the equivalent is:
 

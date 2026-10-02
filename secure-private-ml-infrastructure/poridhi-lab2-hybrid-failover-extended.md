@@ -72,12 +72,30 @@ Inside the Linux environment, install the toolchain the rest of the lab assumes 
 
 ```bash
 sudo apt update
-sudo apt install -y wireguard wireguard-tools docker.io docker-compose-plugin \
-  openssl dnsutils curl jq unzip python3-pip ca-certificates
+# Note: docker-compose-plugin is not in the repos for some newer Ubuntu releases
+# (Ubuntu 24.10+ and the rolling 'resolute' codename). We do not need it in this
+# lab - everything uses `docker run`, not `docker compose`. If your apt complains,
+# just drop it from the install line below.
+sudo apt install -y wireguard wireguard-tools docker.io \
+  openssl bind9-dnsutils curl jq unzip python3-pip ca-certificates
+# If the docker group was not created (can happen if docker.io failed silently
+# on a non-LTS release), create it manually and add yourself.
+sudo groupadd -f docker
 sudo usermod -aG docker $USER
-newgrp docker
-# Confirm Docker works without sudo
-docker run --rm hello-world
+# Refresh the group membership without logging out. Works even if `newgrp` is
+# not installed (some minimal Ubuntu images omit it).
+sg docker -c "docker run --rm hello-world"
+```
+
+If `sg docker -c "docker run --rm hello-world"` says `docker: command not found`, your `docker.io` install actually failed. Use the official Docker convenience script, which is the documented path for non-Docker-Desktop WSL2 systems:
+
+```bash
+# Fallback : install Docker from get.docker.com. This is the upstream-supported
+# path for WSL2 distros that ship without a recent docker.io in their apt repo.
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+sudo sh /tmp/get-docker.sh
+sudo usermod -aG docker $USER
+sg docker -c "docker run --rm hello-world"
 ```
 
 macOS equivalent (Homebrew):
@@ -88,6 +106,9 @@ open -a Docker   # launch Docker Desktop, accept the priv helper prompt
 ```
 
 What you should see : `docker run hello-world` prints "Hello from Docker!" and exits 0. If you get "permission denied" on the Docker socket, log out and back in so the `docker` group membership takes effect.
+
+
+![alt text](image-5.png)
 
 ### Step 0.2 : Create the AWS account and the cost guardrail
 
