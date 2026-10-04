@@ -1,0 +1,16 @@
+{
+    "user_id" : 1 , 
+    "name" : "Akash", 
+    "Email": "tajuar.akash@gmail.com", 
+    "orders": [
+        {
+            "product_name":"Laptop", 
+            "price": 50000
+        },
+        {
+            "product_name" : "Mouse", 
+            "price": 1500
+        }      
+]
+}
+
