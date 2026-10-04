@@ -1,4 +1,4 @@
-# Lab 7.1: Feature Store Concepts (Beginner Friendly)
+# Lab 7.1: Feature Store Concepts 
 
 
 ## What is a feature store, in plain English?
