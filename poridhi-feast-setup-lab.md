@@ -157,7 +157,7 @@ By the end of this lab, you will be able to:
 
 - A working Python 3.9+ environment on Linux, macOS, or Windows.
 - An AWS account with permission to create an S3 bucket and an IAM user with access keys.
-- Docker installed locally (used to run Redis), or a managed Redis endpoint.
+- A managed Redis instance from the Poridhi Cloud Tray (open the Cloud Tray, click **Database**, then click the **Redis** card). The panel shows the actual **Username**, **Password**, **IP Address**, **Port**, and **Connection String** for the current lab session. The values can change between lab runs, so always read them from the panel instead of hard-coding them.
 - Basic familiarity with the terminal, `pip`, and editing YAML files.
 - `aws` CLI installed and configured (for S3 access).
 - **Region:** `ap-southeast-1` (Asia Pacific, Singapore). All AWS resources in this lab will be created in this region. The lab uses AZs `ap-southeast-1a`, `ap-southeast-1b`, `ap-southeast-1c` as labels in the architecture; in practice the bucket and IAM are region-wide and not AZ-scoped.
@@ -189,7 +189,7 @@ You should now be inside an isolated Python environment. Anything you install wi
 Install Feast plus the AWS and Redis extras. This pulls in `boto3`, `redis`, and the S3 file source plugin:
 
 ```bash
-pip install "feast[aws,redis]==0.36.1"
+pip install "feast[aws,redis]==0.36.0"
 ```
 
 Verify the install:
@@ -198,7 +198,7 @@ Verify the install:
 feast --version
 ```
 
-You should see a version like `Feast version: 0.36.1`.
+You should see a version like `Feast version: 0.36.0`.
 
 ### Step 3: Configure your AWS credentials
 
@@ -237,37 +237,51 @@ echo "export FEAST_S3_BUCKET=$BUCKET_NAME" >> ~/.bashrc
 export FEAST_S3_BUCKET=$BUCKET_NAME
 ```
 
-### Step 5: Start a local Redis container
+### Step 5: Use the managed Redis from the Poridhi Cloud Tray
 
-Run Redis in Docker. This is the simplest way to get a working online store for development:
-
-```bash
-docker run -d --name feast-redis -p 6379:6379 redis:7-alpine
-```
-
-Confirm Redis is up:
+Poridhi Cloud already provides a managed Redis instance for this lab. Open the **Cloud Tray** in the lab UI, click **Database**, then click the **Redis** card. The panel shows the actual **Username**, **Password**, **IP Address**, and **Port** for the current lab session. Copy them and export them as shell variables:
 
 ```bash
-docker ps | grep feast-redis
+export REDIS_HOST="<paste-ip-from-cloud-tray>"
+export REDIS_PORT="<paste-port-from-cloud-tray>"
+export REDIS_USERNAME="<paste-username-from-cloud-tray>"
+export REDIS_PASSWORD="<paste-password-from-cloud-tray>"
 ```
 
-Test the connection:
+The values shown in the panel can change between lab sessions, so always re-read them.
+
+Confirm the connection works. The Poridhi lab VM does not have `redis-cli` pre-installed by default, so the Python client (which Feast already depends on) is the easiest path:
 
 ```bash
-docker exec -it feast-redis redis-cli ping
+python -c "import redis; r=redis.Redis(host='$REDIS_HOST', port=int('$REDIS_PORT'), password='$REDIS_PASSWORD', username='$REDIS_USERNAME'); print(r.ping())"
 ```
 
-Expected output: `PONG`.
+Expected output: `True`. If you see `ModuleNotFoundError: No module named 'redis'`, install it first:
 
-If you do not have Docker, you can install Redis directly (`apt install redis-server` on Ubuntu, `brew install redis` on macOS) and run `redis-server` in another terminal.
+```bash
+pip install redis
+```
+
+If you would rather use `redis-cli`, install it and ping with the same variables:
+
+```bash
+sudo apt-get update && sudo apt-get install -y redis-tools
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user "$REDIS_USERNAME" -a "$REDIS_PASSWORD" ping
+```
+
+Expected output: `PONG`. The lab works either way.
 
 ### Step 6: Create the Feast project
 
-Inside the `feast-lab` directory, run the Feast init command with the AWS template:
+Inside the `feast-lab` directory, run the Feast init command. Use the **default template**, not the `aws` template, even though the lab uses AWS for the offline store:
 
 ```bash
-feast init feature_repo --template aws
+feast init feature_repo
 ```
+
+If `feast init` asks which template to use, press Enter to accept the default (it does not need Redshift or any other AWS service for this lab).
+
+> **Why not `--template aws`?** That template is for labs that use **Amazon Redshift** as the offline store. It prompts for a Redshift cluster ID, Redshift credentials, and a staging S3 bucket, and then tries to upload a sample dataset to Redshift. The cluster ID must match the regex `[a-z][a-z0-9]*(-[a-z0-9]+)*`, so typing `n/a` or leaving it blank will fail with `RedshiftCredentialsError: Redshift API failed due to incorrect credentials`. Since this lab uses S3 (not Redshift) for the offline store, the default template is the right choice.
 
 This creates a new folder called `feature_repo` containing:
 
@@ -283,7 +297,7 @@ cd feature_repo
 
 ### Step 7: Edit `feature_store.yaml`
 
-Open `feature_store.yaml` and replace its contents with the following. Replace `your-unique-bucket-name` with the actual S3 bucket name from Step 4:
+Open `feature_store.yaml` and replace its contents with the following. Replace `your-unique-bucket-name` with the S3 bucket name from Step 4, and replace `your-redis-host`, `your-redis-port`, `your-redis-username`, and `your-redis-password` with the values you copied from the Cloud Tray Redis panel in Step 5:
 
 ```yaml
 project: feast_lab
@@ -294,7 +308,9 @@ offline_store:
   region: ap-southeast-1
 online_store:
   type: redis
-  connection_string: localhost:6379
+  connection_string: your-redis-host:your-redis-port
+  user: your-redis-username
+  password: your-redis-password
 entity_key_serialization_version: 3
 ```
 
@@ -305,7 +321,8 @@ Notes about this file:
 - `provider: aws`: tells Feast we want the AWS flavor of the offline store.
 - `offline_store.type: file`: tells Feast to use the file-based (S3 + Parquet) offline store.
 - `online_store.type: redis`: tells Feast to use Redis for online lookups.
-- `connection_string: localhost:6379`: this is the default Redis port on your local machine.
+- `connection_string: host:port`: the Poridhi managed Redis host and port from the Cloud Tray panel.
+- `user` and `password`: the username and password shown in the Cloud Tray Redis panel for this lab session.
 
 ### Step 8: Replace the example feature definition
 
@@ -424,8 +441,7 @@ Run through this checklist to confirm the lab is correctly built:
 - `feast --version` returns a version number (no error).
 - `feast apply` exits with code 0 and prints "Registered feature view driver_stats".
 - `aws s3 ls s3://$FEAST_S3_BUCKET/registry/` shows `registry.db`.
-- `docker ps | grep feast-redis` shows a running container.
-- `docker exec feast-redis redis-cli ping` returns `PONG`.
+- `redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user "$REDIS_USERNAME" -a "$REDIS_PASSWORD" ping` returns `PONG` (or the Python ping snippet using the same env vars returns `True`).
 - `feast feature-views list` (run from inside `feature_repo`) prints `driver_stats`.
 
 ## Testing
@@ -477,25 +493,60 @@ The bucket name in `feature_store.yaml` does not match an actual bucket. Re-chec
 **Error: `AccessDenied` on S3 writes.**
 The IAM user whose credentials you used in `aws configure` does not have permission to write to the bucket. Add a policy with `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`, and `s3:DeleteObject` on `arn:aws:s3:::your-bucket-name/*` and the bucket itself.
 
-**Error: `redis.exceptions.ConnectionError`.**
-Redis is not reachable. Run `docker ps` to confirm the container is up, then `docker logs feast-redis` to see why it might have exited. If you are not using Docker, make sure `redis-server` is running and listening on port 6379.
+**Error: `redis.exceptions.ConnectionError` or `WRONGPASS`.**
+The managed Redis from the Poridhi tray is not reachable or the credentials in `feature_store.yaml` are wrong. Re-open the Cloud Tray → Database → Redis panel, copy the **Username**, **Password**, **IP Address**, and **Port** again, and update the `online_store` block in `feature_store.yaml` plus the `REDIS_*` env vars. Test with `redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user "$REDIS_USERNAME" -a "$REDIS_PASSWORD" ping`.
 
 **Error: `ModuleNotFoundError: No module named 'feast'`.**
 You are not inside the virtual environment. Run `source .venv/bin/activate` (or `.venv\Scripts\activate` on Windows) and try again.
 
+**Error: `bash: redis-cli: command not found`.**
+`redis-cli` is not pre-installed on the Poridhi lab VM. Either install it (`sudo apt-get update && sudo apt-get install -y redis-tools`) or skip it and use the Python ping snippet from Step 5.
+
+**Error: `ModuleNotFoundError: No module named 'redis'`.**
+You are using the Python fallback but the `redis` package is not installed. Run `pip install redis` from inside the virtual environment, then re-run the ping command.
+
 **Error: `FileSource path 'data/driver_stats.parquet' not found`.**
 The Parquet file was not created. Re-run the Python snippet in Step 9 from inside the `feature_repo` directory.
+
+**Error: `feast init` keeps asking for a Redshift cluster ID, or fails with `RedshiftCredentialsError: Redshift API failed due to incorrect credentials`.**
+You ran `feast init feature_repo --template aws`. That template is for the Redshift offline store, which this lab does not use. Delete the half-created `feature_repo/` and re-run with the default template:
+
+```bash
+cd ~/code/feast-lab
+rm -rf feature_repo
+feast init feature_repo
+```
+
+Accept the default template when prompted. The lab overwrites `feature_store.yaml` in Step 7 anyway, so the template choice only affects the initial scaffolding, not the final configuration.
 
 **Error: `Entity 'driver_id' not registered`.**
 This usually means `feast apply` did not complete successfully. Look at the full error message, fix the underlying issue, and re-run `feast apply`.
 
 ## Cleanup
 
-Stop Redis and remove the container to free port 6379:
+The Redis instance is managed by the Poridhi Cloud Tray, so there is nothing local to stop. To avoid leaving data behind, you can clear the keys that Feast wrote. If you have `redis-cli`:
 
 ```bash
-docker stop feast-redis
-docker rm feast-redis
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user "$REDIS_USERNAME" -a "$REDIS_PASSWORD" --scan --pattern '*' | xargs -r -L 100 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user "$REDIS_USERNAME" -a "$REDIS_PASSWORD" DEL
+```
+
+If you do not have `redis-cli`, use the Python client instead:
+
+```bash
+python - <<'PY'
+import os
+import redis
+r = redis.Redis(
+    host=os.environ["REDIS_HOST"],
+    port=int(os.environ["REDIS_PORT"]),
+    password=os.environ["REDIS_PASSWORD"],
+    username=os.environ["REDIS_USERNAME"],
+)
+keys = r.keys('*')
+if keys:
+    r.delete(*keys)
+print(f"Deleted {len(keys)} keys")
+PY
 ```
 
 Empty and delete the S3 bucket:
