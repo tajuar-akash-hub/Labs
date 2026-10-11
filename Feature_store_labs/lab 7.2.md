@@ -37,7 +37,7 @@ By the end of this lab, you will be able to:
 - **Cloud Tray: Redis (managed, already running):** Open the Cloud Tray in the Poridhi lab UI, click **Database**, then click the **Redis** card. The panel shows the actual credentials for this lab session: **Username**, **Password**, **IP Address**, **Port**, and a copy-able **Connection String**. The values can change between lab runs, so always read them from the panel instead of hard-coding them. You will use these in Step 6 and in the `feature_store.yaml` in Step 8.
 - **AWS credentials:** Generate a credential from the Poridhi Cloud Playground lab UI (Generate credential button). Region is `ap-southeast-1` (Singapore).
 - **Region:** `ap-southeast-1` (Asia Pacific, Singapore). The S3 bucket and IAM are region-wide; the lab references AZs `ap-southeast-1a`, `ap-southeast-1b`, `ap-southeast-1c` in diagrams but does not pin resources to specific AZs.
-- **Tools already on the VM:** `python3` (3.9+), `pip`, `aws` CLI, and the `redis` Python client (install with `pip install redis` if missing). The lab uses `vim` (already at `/usr/bin/vim`) to edit `feature_store.yaml` and `example_repo.py`, with a shell heredoc fallback for users who prefer not to use `vim`. `code` (VS Code CLI), `nano`, and `xdg-open` are NOT available in the default lab VM, so do not rely on them. `redis-cli` is also NOT pre-installed: use the Python fallback in Step 6 to test the managed Redis.
+- **Tools already on the VM:** `python3` (3.9+), `pip`, `aws` CLI, and the `redis` Python client (install with `pip install redis` if missing). The lab uses `vim` (already at `/usr/bin/vim`) to edit `feature_store.yaml` and `example_repo.py`. `code` (VS Code CLI), `nano`, and `xdg-open` are NOT available in the default lab VM, so do not rely on them. `redis-cli` is also NOT pre-installed: use the Python fallback in Step 6 to test the managed Redis.
 
 ## Prologue
 
@@ -246,7 +246,7 @@ cd feature_repo
 
 ### Step 8: Edit `feature_store.yaml`
 
-Open `feature_store.yaml` with `vim` (or the heredoc fallback below):
+Open `feature_store.yaml` with `vim`:
 
 ```bash
 vim feature_store.yaml
@@ -258,27 +258,6 @@ Inside `vim`:
 - Paste the YAML below.
 - Press `Esc` to leave insert mode.
 - Type `:wq` and press Enter to save and quit.
-
-If you would rather avoid `vim`, write the file directly with a shell heredoc (no editor needed):
-
-```bash
-cat > feature_store.yaml <<'YAMLEOF'
-project: feast_lab
-registry: s3://your-unique-bucket-name/registry/registry.db
-provider: aws
-offline_store:
-  type: file
-  region: ap-southeast-1
-online_store:
-  type: redis
-  connection_string: your-redis-host:your-redis-port
-  user: your-redis-username
-  password: your-redis-password
-entity_key_serialization_version: 3
-YAMLEOF
-```
-
-Then continue with the placeholder replacements below.
 
 Replace the contents with the following. Replace `your-unique-bucket-name` with the S3 bucket name from Step 5, and replace `your-redis-host`, `your-redis-port`, `your-redis-username`, and `your-redis-password` with the values from the Cloud Tray Redis panel in Step 6:
 
@@ -297,7 +276,7 @@ online_store:
 entity_key_serialization_version: 3
 ```
 
-Save the file (in `vim`, save with `:wq`; in the heredoc approach, the file is already written when the command returns).
+Save the file with `:wq`.
 
 ![alt text](image-21.png)
 
@@ -313,7 +292,7 @@ Notes about this file:
 
 ### Step 9: Replace the example feature definition
 
-Open `example_repo.py` with `vim` (or use the heredoc fallback below):
+Open `example_repo.py` with `vim`:
 
 ```bash
 vim example_repo.py
@@ -326,7 +305,7 @@ Inside `vim`:
 - Press `Esc` to leave insert mode.
 - Type `:wq` and press Enter to save and quit.
 
-If you would rather avoid `vim`, write the file directly with a shell heredoc (no editor needed):
+Paste this Python code:
 
 ```python
 from datetime import timedelta
@@ -363,43 +342,7 @@ driver_stats_fv = FeatureView(
 )
 ```
 
-If you used the heredoc fallback, paste this command instead of the Python block above:
-
-```bash
-cat > example_repo.py <<'PYEOF'
-from datetime import timedelta
-
-from feast import Entity, FeatureView, FileSource, ValueType
-
-driver_stats_source = FileSource(
-    name="driver_stats_source",
-    path="data/driver_stats.parquet",
-    timestamp_field="event_timestamp",
-    created_timestamp_column="created",
-)
-
-driver = Entity(
-    name="driver_id",
-    description="Driver identifier",
-    value_type=ValueType.INT64,
-)
-
-driver_stats_fv = FeatureView(
-    name="driver_stats",
-    entities=["driver_id"],
-    ttl=timedelta(days=1),
-    schema=[
-        ("conv_rate", ValueType.FLOAT),
-        ("acc_rate", ValueType.FLOAT),
-        ("avg_daily_trips", ValueType.INT64),
-    ],
-    source=driver_stats_source,
-    online=True,
-)
-PYEOF
-```
-
-Either way, save the file as `driver_repo.py` so the original is preserved:
+Save the file as `driver_repo.py` so the original is preserved:
 
 ```bash
 mv example_repo.py driver_repo.py
@@ -549,7 +492,7 @@ Accept the default template when prompted. The lab overwrites `feature_store.yam
 `redis-cli` is not pre-installed on the Poridhi lab VM. Either install it (`sudo apt-get update && sudo apt-get install -y redis-tools`) or skip it and use the Python ping snippet from Step 6.
 
 **Error: `bash: code: command not found` (or `bash: nano: command not found`, `bash: xdg-open: command not found`) when trying to open `feature_store.yaml` or `example_repo.py`.**
-The Poridhi lab VM only ships with `vim` for terminal editing; the VS Code CLI, `nano`, and `xdg-open` are not installed. Use `vim feature_store.yaml` (or `vim example_repo.py`) as shown in Step 8 and Step 9, or skip the editor entirely and write the file with the `cat > file <<'EOF'` heredoc blocks provided in those same steps.
+The Poridhi lab VM only ships with `vim` for terminal editing; the VS Code CLI, `nano`, and `xdg-open` are not installed. Use `vim feature_store.yaml` (or `vim example_repo.py`) as shown in Step 8 and Step 9.
 
 **Error: `ModuleNotFoundError: No module named 'redis'`.**
 You are using the Python fallback but the `redis` package is not installed. Run `pip install redis` from inside the virtual environment, then re-run the ping command.
@@ -576,24 +519,8 @@ The next thing you would normally do is connect a real data source (a Kafka stre
 - **Use the platform's managed services when available:** spinning up a local Redis when the lab provides a managed one wastes time and breaks the lab pattern.
 - **Least privilege:** the IAM user only needs S3 read/write on the specific bucket. No wildcard policies.
 
-## What You Learned
 
-- How to generate AWS credentials from the Poridhi lab UI and configure the AWS CLI.
-- How to install Feast with AWS and Redis extras in an isolated virtual environment on Linux.
-- How to create an S3 bucket in `ap-southeast-1` and use it as a Feast offline store and registry.
-- How to point Feast at the Poridhi managed Redis (credentials from the Cloud Tray panel) without spinning up a container.
-- How to write a `feature_store.yaml` that wires both stores together.
-- How to define an `Entity`, a `FileSource`, and a `FeatureView` in Python.
-- How to apply feature definitions and verify them with `feast entities list` and `feast feature-views list`.
-- How to materialize features and read them back from the managed Redis.
 
-## Next Steps
-
-- Replace the static Parquet sample with a real data source, such as a Kafka topic or a Parquet dataset updated by a daily ETL job.
-- Add a feature service that bundles multiple feature views together for easier consumption from inference services.
-- Add a second feature view (for example, `driver_activity_7d`) and a `FeatureService` that joins both.
-- Wire `get_historical_features` into a training script to produce a point-in-time-correct training dataset.
-- Use the Poridhi Cloud Tray Load Balancer to expose a small FastAPI inference service that calls `get_online_features` against the same Redis.
 
 ## Additional Resources
 
