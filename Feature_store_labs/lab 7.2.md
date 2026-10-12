@@ -7,7 +7,7 @@ In production ML systems, training and inference often compute the same features
 In this beginner-friendly lab, you will install Feast on the Poridhi lab VM, wire it to S3 (offline) and the Poridhi managed Redis (online), define a `driver_stats` feature view, and run `feast apply` to register it. By the end you will have a working feature store ready to feed both training jobs and inference services.
 
 
-![alt text](image-12.png)
+![alt text](images/image-12.png)
 
 ### Architecture Explanation
 
@@ -90,7 +90,7 @@ python -m pip install --upgrade pip
 You should now be inside an isolated Python environment. Anything you install will only affect this folder.
 
 
-![alt text](image-13.png)
+![alt text](images/image-13.png)
 
 ### Step 3: Install Feast with AWS and Redis support
 
@@ -107,7 +107,7 @@ feast --help
 ```
 
 
-![alt text](image-14.png)
+![alt text](images/image-14.png)
 
 You should see the list of Feast subcommands (`apply`, `materialize`, `entities`, etc.) without any import errors. To print the installed package version:
 
@@ -129,7 +129,7 @@ export AWS_REGION="ap-southeast-1"
 export AWS_SESSION_TOKEN="<paste-session-token>"
 ```
 
-![alt text](image-15.png)
+![alt text](images/image-15.png)
 
 Then set the default region and output format:
 
@@ -152,7 +152,7 @@ Verify that the credentials work:
 aws sts get-caller-identity
 ```
 
-![alt text](image-16.png)
+![alt text](images/image-16.png)
 
 Expected output: a JSON document with your account ID, an `arn` containing `assumed-role`, and `ap-southeast-1` somewhere in the metadata.
 
@@ -175,7 +175,7 @@ Confirm it exists:
 aws s3 ls | grep "$BUCKET_NAME"
 ```
 
-![alt text](image-17.png)
+![alt text](images/image-17.png)
 
 Persist the bucket name for later steps:
 
@@ -203,7 +203,7 @@ python -c "import redis; r=redis.Redis(host='$REDIS_HOST', port=int('$REDIS_PORT
 
 Expected output: `True`. If you see `ModuleNotFoundError: No module named 'redis'`, install it first:
 
-![alt text](image-19.png)
+![alt text](images/image-19.png)
 
 ```bash
 pip install redis
@@ -218,7 +218,7 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user "$REDIS_USERNAME" -a "$REDIS_
 
 Expected output: `PONG`. The lab works either way; pick one and continue.
 
-![alt text](image-20.png)
+![alt text](images/image-20.png)
 
 ### Step 7: Create the Feast project
 
@@ -278,7 +278,7 @@ entity_key_serialization_version: 3
 
 Save the file with `:wq`.
 
-![alt text](image-21.png)
+![alt text](images/image-21.png)
 
 Notes about this file:
 
@@ -378,7 +378,7 @@ print("Wrote data/driver_stats.parquet")
 PY
 ```
 
-![alt text](image-22.png)
+![alt text](images/image-22.png)
 
 ### Step 11: Apply the feature definition
 

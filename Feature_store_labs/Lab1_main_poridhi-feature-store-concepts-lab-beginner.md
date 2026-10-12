@@ -15,7 +15,7 @@ A **feature store** is just "the pantry + the grab-bag". It is two databases:
 
 The cleverest part of a feature store is that it stops you from cheating. You will see how in this lab.
 
-![Feature_store_labs/Untitled Diagram-Page-2.drawio.png](<Untitled Diagram-Page-2.drawio.png>)
+![Untitled Diagram-Page-2.drawio.png](images/Untitled%20Diagram-Page-2.drawio.png)
 
 ## Glossary (read this first!)
 
@@ -53,7 +53,7 @@ You only need:
 
 ## The whiteboard sketch (the "key focus" of this lab)
 
-![alt text](image-1.png)
+![alt text](images/image-1.png)
 
 **Three ideas this picture captures (the entire lab in one diagram):**
 
@@ -85,7 +85,7 @@ Open a terminal (PowerShell, bash, zsh — any will do) and run:
 mkdir fs-beginner && cd fs-beginner
 ```
 
-![alt text](image-2.png)
+![alt text](images/image-2.png)
 
 
 
@@ -99,7 +99,7 @@ fs-beginner/
     └── init.sql            ← creates the database tables
 ```
 
-![alt text](image-3.png)
+![alt text](images/image-3.png)
 
 Run these to make the folders:
 
@@ -222,18 +222,18 @@ In the `fs-beginner` folder:
 docker compose up -d
 ```
 
-![alt text](image-4.png)
+![alt text](images/image-4.png)
 
 This downloads and starts the 3 containers. Wait ~10 seconds, then check that they are healthy:
 
 
-![alt text](image-5.png)
+![alt text](images/image-5.png)
 
 ```bash
 docker compose ps
 ```
 
-![alt text](image-6.png)
+![alt text](images/image-6.png)
 
 You should see all three with `(healthy)` in the STATUS column. If Postgres or Redis show `starting`, wait a few more seconds and run it again.
 
@@ -308,7 +308,7 @@ docker compose exec client python /app/seed.py
 Inserted 30 feature rows and 3 labels.
 ```
 
-![alt text](image-7.png)
+![alt text](images/image-7.png)
 
 ✅ If you see that, your database now has data.
 
@@ -367,7 +367,7 @@ docker compose exec client python /app/leaky.py
 ...
 ```
 
-![alt text](image-8.png)
+![alt text](images/image-8.png)
 
 Notice the **second date (`feat_ts`) is AFTER the first (`label_ts`)**. That's the leak. We are using data from the future to "predict" a past event.
 
@@ -486,7 +486,7 @@ docker compose exec client python /app/materialize.py
 Materialized 6 features into Redis.
 ```
 
-![alt text](image-9.png)
+![alt text](images/image-9.png)
 
 > 💡 **Why 6?** 3 users × 2 features = 6.
 
@@ -538,7 +538,7 @@ Online read for alice: 0.42 ms
                  mat_ts  = 2026-10-04T...
 ```
 
-![alt text](image-10.png)
+![alt text](images/image-10.png)
 
 Two things to notice:
 
@@ -580,7 +580,7 @@ JOIN feature_values f
 
 **Expected:** A non-zero number. That is the bug we want to fix.
 
-![alt text](image-11.png)
+![alt text](images/image-11.png)
 
 ### Test 2: Confirm PITC fix gives zero leakage
 
