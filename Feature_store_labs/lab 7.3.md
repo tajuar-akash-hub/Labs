@@ -215,100 +215,88 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user "$REDIS_USERNAME" -a "$REDIS_
 
 Expected output: `PONG`. The lab works either way; pick one and continue.
 
-### Step 7: Create the Feast project
+### Step 7: Create the Feast project folder (no `feast init`)
 
-Inside `~/code/feast-lab`, run the Feast init command. Use the **default template**, not the `aws` template, even though the lab uses AWS for the offline store:
+Recent versions of `feast init` create a nested folder `feature_repo/feature_repo/` and ship a `feature_definitions.py` that defines its own `Project`, `Entity`, `FeatureView`, and `LabelView`. Because `feast apply` scans every `.py` file under the repo, that scaffolded file would collide with the definitions we write below and cause `PydanticValidationError: Entity 'driver' is already registered` or `extra fields not permitted` errors.
 
-```bash
-cd ~/code/feast-lab
-feast init feature_repo
-```
-
-If `feast init` asks which template to use, press Enter to accept the default (it does not need Redshift or any other AWS service for this lab).
-
-> **Why not `--template aws`?** That template is for labs that use **Amazon Redshift** as the offline store. The `aws` template prompts for a Redshift cluster ID, Redshift credentials, and a staging S3 bucket, and then it tries to upload a sample dataset to Redshift. The cluster ID must match the regex `[a-z][a-z0-9]*(-[a-z0-9]+)*`, so typing `n/a` or leaving it blank will fail with `RedshiftCredentialsError: Redshift API failed due to incorrect credentials`. Since this lab uses S3 (not Redshift) for the offline store, the default template is the right choice.
-
-This creates a new folder called `feature_repo` containing:
-
-- `feature_store.yaml`: the configuration file we will edit next.
-- `example_repo.py`: a starter feature definition.
-- `data/`: a small Parquet sample used for testing.
-
-Move into the project folder:
+Skip the scaffold and create the project folder by hand. The whole `feature_repo/` only needs a `data/` subfolder and a `feature_store.yaml`:
 
 ```bash
-cd feature_repo
+mkdir -p ~/code/feast-lab/feature_repo/data
+cd ~/code/feast-lab/feature_repo
 ```
+
+You should now be in `~/code/feast-lab/feature_repo`. The next two steps write `feature_store.yaml` and `driver_repo.py` directly into this folder.
 
 ![alt text](image-6.png)
 
-### Step 8: Edit `feature_store.yaml`
+### Step 8: Write `feature_store.yaml`
 
-Open `feature_store.yaml` with `vim`:
+Write the configuration file with a heredoc. The credentials and bucket name are pulled from the env vars you exported in Steps 1, 5, and 6, so the file works across lab sessions even when the Redis endpoint or the bucket name changes.
+
+The connection string format is `host:port,username=...,password=...`. The `user:` and `password:` top-level keys were removed in modern Feast because Pydantic rejects unknown fields; all auth must go inside `connection_string`.
+
+> **Important:** the heredoc is unquoted (`<<EOF` rather than `<<'EOF'`) so bash expands `$FEAST_S3_BUCKET`, `$REDIS_HOST`, `$REDIS_PORT`, `$REDIS_USERNAME`, and `$REDIS_PASSWORD` into the final file. Make sure those env vars are still set in your current shell (re-export them from Step 1 / Step 5 / Step 6 if you opened a new terminal):
 
 ```bash
-vim feature_store.yaml
-```
-
-Inside `vim`:
-- Press `i` to enter insert mode.
-- Select and delete the existing content (for example, type `ggdG` in normal mode first to delete every line).
-- Paste the YAML below.
-- Press `Esc` to leave insert mode.
-- Type `:wq` and press Enter to save and quit.
-
-Replace the contents with the following. Replace `your-unique-bucket-name` with the S3 bucket name from Step 5, and replace `your-redis-host`, `your-redis-port`, `your-redis-username`, and `your-redis-password` with the values from the Cloud Tray Redis panel in Step 6:
-
-```yaml
+cat > feature_store.yaml <<EOF
 project: feast_lab
-registry: s3://your-unique-bucket-name/registry/registry.db
+registry: s3://$FEAST_S3_BUCKET/registry/registry.db
 provider: aws
 offline_store:
   type: file
-  region: ap-southeast-1
 online_store:
   type: redis
-  connection_string: your-redis-host:your-redis-port
-  user: your-redis-username
-  password: your-redis-password
+  connection_string: $REDIS_HOST:$REDIS_PORT,username=$REDIS_USERNAME,password=$REDIS_PASSWORD
 entity_key_serialization_version: 3
+EOF
 ```
 
-Save the file with `:wq`.
+Verify the file is correct:
 
+```bash
+cat feature_store.yaml
+```
 
+Expected output (your bucket name, host, port, username, and password will be different):
+
+```yaml
+project: feast_lab
+registry: s3://feast-offline-store-1791821237/registry/registry.db
+provider: aws
+offline_store:
+  type: file
+online_store:
+  type: redis
+  connection_string: 100.80.93.231:6379,username=redis,password=redis
+entity_key_serialization_version: 3
+```
 
 Notes about this file:
 
 - `project`: a human-readable name for the project. Used in paths and logs.
 - `registry`: where Feast stores the metadata about your features. We are putting it on S3 so the registry survives across machines.
 - `provider: aws`: tells Feast we want the AWS flavor of the offline store.
-- `offline_store.type: file`: tells Feast to use the file-based (S3 + Parquet) offline store.
+- `offline_store.type: file`: tells Feast to use the file-based (S3 + Parquet) offline store. No `region` key is required for the file offline store; the bucket region is discovered from S3.
 - `online_store.type: redis`: tells Feast to use the Poridhi managed Redis for online lookups.
-- `connection_string: host:port`: the Poridhi managed Redis host and port from the Cloud Tray panel.
-- `user` and `password`: the username and password shown in the Cloud Tray Redis panel for this lab session.
+- `connection_string: host:port,username=...,password=...`: the Poridhi managed Redis endpoint and credentials from the Cloud Tray panel. The auth fields must be embedded in the connection string itself, not as separate keys.
+- `entity_key_serialization_version: 3`: the modern serialization for Redis keys. Required by recent Feast versions.
 
-### Step 9: Replace the example feature definition
+### Step 9: Write `driver_repo.py`
 
-Open `example_repo.py` with `vim`:
+The default `feast init` scaffold is intentionally avoided. Write the feature definition directly with the modern `Field` / `feast.types` API. This API:
+
+- Uses `Field(name=..., dtype=Float64)` (or `Int64`) instead of the deprecated `(name, ValueType)` tuples.
+- Passes the `Entity` **object** to `FeatureView(entities=[...])`, not the entity name as a string.
+- Uses `ttl=timedelta(days=3650)` so the ttl comfortably exceeds the four weekly batches we generate.
 
 ```bash
-vim example_repo.py
-```
-
-Inside `vim`:
-- Press `i` to enter insert mode.
-- Select and delete the existing content (for example, type `ggdG` in normal mode first to delete every line).
-- Paste the Python code below.
-- Press `Esc` to leave insert mode.
-- Type `:wq` and press Enter to save and quit.
-
-Paste this Python code. Note the `path` of the `FileSource`: it is a glob (`data/driver_stats*.parquet`) so every Parquet file in `data/` whose name starts with `driver_stats` becomes part of the source. New batches dropped into that folder will be picked up by the next `materialize` or `get_historical_features` call:
-
-```python
+cat > driver_repo.py <<'PY'
+"""Feature definitions for the driver_stats feature view."""
 from datetime import timedelta
 
-from feast import Entity, FeatureView, FileSource, ValueType
+from feast import Entity, FeatureView, Field, FileSource, ValueType
+from feast.types import Float64, Int64
 
 # Source: every Parquet file in data/ whose name starts with driver_stats
 driver_stats_source = FileSource(
@@ -321,32 +309,35 @@ driver_stats_source = FileSource(
 # Entity: the thing we want to look up features for
 driver = Entity(
     name="driver_id",
-    description="Driver identifier",
+    join_keys=["driver_id"],
     value_type=ValueType.INT64,
+    description="Driver identifier",
 )
 
 # FeatureView: a logical group of features tied to the entity
 driver_stats_fv = FeatureView(
     name="driver_stats",
-    entities=["driver_id"],
-    ttl=timedelta(days=1),
+    entities=[driver],
+    ttl=timedelta(days=3650),
     schema=[
-        ("conv_rate", ValueType.FLOAT),
-        ("acc_rate", ValueType.FLOAT),
-        ("avg_daily_trips", ValueType.INT64),
+        Field(name="conv_rate", dtype=Float64),
+        Field(name="acc_rate", dtype=Float64),
+        Field(name="avg_daily_trips", dtype=Int64),
     ],
     source=driver_stats_source,
     online=True,
 )
+PY
 ```
+
+Notes about the file:
+
+- `path="data/driver_stats*.parquet"` is a glob, so every Parquet file in `data/` whose name starts with `driver_stats` becomes part of the source. New batches dropped into that folder will be picked up by the next `materialize-incremental` or `get_historical_features` call.
+- `Field(name="conv_rate", dtype=Float64)` declares the schema with typed columns. Modern Feast rejects the old tuple form (`("conv_rate", ValueType.FLOAT)`) because `FLOAT` is not a valid `FeastType`.
+- `entities=[driver]` passes the `Entity` object. The old string form (`entities=["driver_id"]`) is rejected with `Entity 'driver_id' not found` because Feast no longer resolves the name from the registry lookup; you must pass the object.
+- `ttl=timedelta(days=3650)` makes the view remember the last ~10 years of values. The default `ttl=timedelta(days=1)` would silently exclude older batches from the online store and from point-in-time joins.
 
 ![alt text](image-7.png)
-
-Save the file as `driver_repo.py` so the original is preserved:
-
-```bash
-mv example_repo.py driver_repo.py
-```
 
 ### Step 10: Generate four Parquet batches
 
@@ -442,12 +433,16 @@ Now run `feast apply`. This validates the definitions, uploads the registry to S
 feast apply
 ```
 
+![alt text](image-10.png)
+
 Expected output (truncated):
 
 ```text
-Registered entity driver_id
-Registered feature view driver_stats
-Deploying infrastructure for driver_stats
+Applying changes for project feast_lab
+  Creating entity driver_id
+  Creating feature view driver_stats
+  Creating on-demand feature view driver_stats_freshness
+  Deploying infrastructure for driver_stats
 ```
 
 If you see errors, jump to the Troubleshooting section.
@@ -471,16 +466,16 @@ feast feature-views list
 Expected output:
 
 ```text
-NAME         ENTITIES    TYPE
-driver_stats driver_id   ReadableFeatureView
+NAME         ENTITIES    TYPE          ENABLED    STATE
+driver_stats driver_id   ReadableFeatureView True      METADATA_ONLY
 ```
 
 ### Step 13: Run the first incremental materialize
 
-The first run materializes everything from the beginning of time up to the timestamp you pass. Use a timestamp just after the fourth batch landed, so all four batches are loaded in one call:
+The first run materializes everything from the beginning of time up to the timestamp you pass. Feast treats the end timestamp as **exclusive**, so use a timestamp one day after the fourth batch landed (the fourth batch is dated `2026-01-22T00:00:00`). Pushing the end to `2026-01-23T00:00:00` makes sure the `2026-01-22T00:00:00` rows are included:
 
 ```bash
-feast materialize-incremental 2026-01-22T00:00:00
+feast materialize-incremental 2026-01-23T00:00:00
 ```
 
 Expected output (truncated):
@@ -504,7 +499,7 @@ driver_stats:
 
 What just happened:
 - Feast scanned `data/driver_stats*.parquet`.
-- It picked the latest row per `driver_id` whose `event_timestamp` is less than or equal to `2026-01-22T00:00:00`.
+- It picked the latest row per `driver_id` whose `event_timestamp` is strictly less than `2026-01-23T00:00:00`.
 - It wrote those rows to Redis, one key per driver, using the format that `get_online_features()` expects.
 
 ### Step 14: Verify the online store with `get_online_features()`
@@ -539,14 +534,14 @@ acc_rate: [0.99, 0.99, 0.85]
 avg_daily_trips: [35, 42, 18]
 ```
 
-Notice the `conv_rate` for `driver_id=1001` is `0.90` (the latest value from batch 4), not `0.82` (the value from batch 1) and not `0.85` or `0.88` (the values from batches 2 and 3). The online store is now in sync with the latest offline data.
+Notice the `conv_rate` for `driver_id=1001` is `0.90` (the latest value from batch 4, dated `2026-01-22T00:00:00`), not `0.82` (the value from batch 1) and not `0.85` or `0.88` (the values from batches 2 and 3). The online store is now in sync with the latest offline data.
 
 ### Step 15: Re-run the materialize and observe the no-op behavior
 
 Re-run the same materialize command with the same end timestamp. Feast will see that there is nothing newer than the last successful run and report a no-op:
 
 ```bash
-feast materialize-incremental 2026-01-22T00:00:00
+feast materialize-incremental 2026-01-23T00:00:00
 ```
 
 Expected output: a message such as `No new data to materialize` or an empty materialization block. This is exactly the property you want for a daily cron job: the first run of the day picks up last night's batch, and subsequent runs are no-ops.
@@ -643,9 +638,9 @@ Expected output (row order may differ):
  driver_id  label_accepted_ride  conv_rate  acc_rate  avg_daily_trips
       1001                    1       0.82      0.95               28
       1002                    0       0.55      0.88               14
-      1003                    1       0.91      0.99               35
-      1004                    0       0.40      0.71                7
-      1005                    1       0.73      0.84               22
+      1003                    1       0.93      0.99               38
+      1004                    0       0.45      0.74                9
+      1005                    1       0.78      0.86               25
 
 === Correlation with label ===
 conv_rate             0.83
@@ -656,8 +651,8 @@ Name: label_accepted_ride, dtype: float64
 ```
 
 What just happened:
-- For row 0 (`driver_id=1001`, observed on `2026-01-01`), Feast picked `conv_rate=0.82` (from batch 1).
-- For row 2 (`driver_id=1003`, observed on `2026-01-08`), Feast picked `conv_rate=0.91` (from batch 1, since the batch 2 timestamp for that driver is `2026-01-08T00:00:00` and Feast uses the latest row whose `event_timestamp` is strictly less than the entity timestamp; in this lab the values are the same either way).
+- For row 0 (`driver_id=1001`, observed on `2026-01-01T12:00:00`), Feast picked `conv_rate=0.82` (from batch 1, dated `2026-01-01T00:00:00`).
+- For row 2 (`driver_id=1003`, observed on `2026-01-08T12:00:00`), Feast picked `conv_rate=0.93` (from batch 2, dated `2026-01-08T00:00:00`). This is the point-in-time join doing its job: a row observed at noon on `2026-01-08` is allowed to see the batch 2 snapshot from midnight of the same day, but not the batch 3 snapshot from `2026-01-15`.
 - The training DataFrame is ready to feed directly into a model (`fit(training_df.drop(columns=["label_accepted_ride"]), training_df["label_accepted_ride"])`).
 
 ### Step 18: Compare `materialize-incremental` vs `materialize`
@@ -671,7 +666,7 @@ feast materialize 2026-01-01T00:00:00 2026-01-08T00:00:00
 Expected output: Feast will write batch 1 values into Redis for that window, overwriting the current state. After this, run the full incremental again to restore the latest snapshot:
 
 ```bash
-feast materialize-incremental 2026-01-22T00:00:00
+feast materialize-incremental 2026-01-23T00:00:00
 ```
 
 This pair of commands demonstrates the difference: `materialize` lets you backfill a closed window, `materialize-incremental` always brings the online store up to the latest known timestamp.
@@ -687,11 +682,11 @@ Run through this checklist to confirm the lab is correctly built:
 - `feast apply` exits with code 0 and prints "Registered feature view driver_stats".
 - `feast feature-views list` prints `driver_stats`.
 - `ls data/` shows `driver_stats.parquet`, `driver_stats_batch2.parquet`, `driver_stats_batch3.parquet`, `driver_stats_batch4.parquet`, and `entity_df.parquet`.
-- `feast materialize-incremental 2026-01-22T00:00:00` exits 0 and lists 9 drivers.
+- `feast materialize-incremental 2026-01-23T00:00:00` exits 0 and lists 9 drivers.
 - `get_online_features()` for `driver_id=1001` returns `conv_rate=0.90` (the batch 4 value).
 - `get_online_features()` for `driver_id=1009` returns a value (this driver exists only in batch 4).
 - `python train_dataframe.py` prints a training DataFrame with 5 rows and the three feature columns, and a correlation column with `label_accepted_ride`.
-- `feast materialize-incremental 2026-01-22T00:00:00` run a second time prints a "no new data" message.
+- `feast materialize-incremental 2026-01-23T00:00:00` run a second time prints a "no new data" message.
 
 ## Testing
 
@@ -744,16 +739,16 @@ Expected output:
 ```text
    driver_id                event_timestamp  conv_rate
 0       1001 2026-01-01 12:00:00+00:00        0.82
-1       1001 2026-01-10 12:00:00+00:00        0.88
+1       1001 2026-01-10 12:00:00+00:00        0.85
 ```
 
-The same driver gets two different values depending on when the label was observed. This is point-in-time correctness: training data never contains future information.
+The same driver gets two different values depending on when the label was observed. The `2026-01-10T12:00:00` row is allowed to see the batch 2 snapshot (`2026-01-08T00:00:00`, value `0.85`) but NOT the batch 3 snapshot (`2026-01-15T00:00:00`, value `0.88`), because that batch is in the future. This is point-in-time correctness: training data never contains future information.
 
 ### Test 3: Re-materialize is a no-op
 
 ```bash
-feast materialize-incremental 2026-01-22T00:00:00
-feast materialize-incremental 2026-01-22T00:00:00
+feast materialize-incremental 2026-01-23T00:00:00
+feast materialize-incremental 2026-01-23T00:00:00
 ```
 
 Expected: the first run reports rows written, the second run reports no new data.
@@ -761,13 +756,71 @@ Expected: the first run reports rows written, the second run reports no new data
 ## Troubleshooting
 
 **Error: `NoSuchBucket` when running `feast apply` or `materialize-incremental`.**
-The bucket name in `feature_store.yaml` does not match an actual bucket. Re-check Step 5 and copy the exact name. You can also re-export the correct name into `FEAST_S3_BUCKET` and re-edit `feature_store.yaml`.
+The bucket name in `feature_store.yaml` does not match an actual bucket. Re-check Step 5 and copy the exact name. You can also re-export the correct name into `FEAST_S3_BUCKET` and re-edit `feature_store.yaml` by re-running the heredoc from Step 8 with the right env var.
 
 **Error: `AccessDenied` on S3 writes.**
 The Poridhi session credentials have expired or do not have permission to write to the bucket. Re-generate a credential from the lab UI and re-export `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, plus `AWS_SESSION_TOKEN` if Poridhi issued one. Verify with `aws sts get-caller-identity`.
 
 **Error: `redis.exceptions.ConnectionError` or `WRONGPASS`.**
-The Poridhi managed Redis is unreachable or the credentials in `feature_store.yaml` are wrong. Re-open the Cloud Tray → Database → Redis panel, copy the **Username**, **Password**, **IP Address**, and **Port** again, and update the `online_store` block in `feature_store.yaml` plus the `REDIS_*` env vars. Test with the Python ping snippet in Step 6.
+The Poridhi managed Redis is unreachable or the credentials in `feature_store.yaml` are wrong. Re-open the Cloud Tray → Database → Redis panel, copy the **Username**, **Password**, **IP Address**, and **Port** again, and re-export the `REDIS_*` env vars. Then re-run the heredoc from Step 8 so the new values flow into `feature_store.yaml`. Test with the Python ping snippet in Step 6.
+
+**Error: `AuthenticationError: WRONGPASS` or `Redis auth failed` when Feast connects.**
+The auth fields are missing from the `connection_string`. Modern Feast requires the username and password to be embedded in the connection string itself, not as separate `user:` / `password:` keys. Make sure the `online_store` block in `feature_store.yaml` looks like:
+
+```yaml
+online_store:
+  type: redis
+  connection_string: $REDIS_HOST:$REDIS_PORT,username=$REDIS_USERNAME,password=$REDIS_PASSWORD
+```
+
+If you see `Extra inputs are not permitted` for `user` or `password`, you are on the old format: delete those top-level keys and put the credentials inside `connection_string` only.
+
+**Error: `pydantic.ValidationError: Extra inputs are not permitted` for `region` under `offline_store`.**
+Recent Feast versions removed the `region` key from the `file` offline store (the region is discovered from S3 itself). Delete the `region: ap-southeast-1` line from `feature_store.yaml` and re-run `feast apply`.
+
+**Error: `TypeCheckError: Invalid type INT64 for feature conv_rate` (or `FLOAT64` mismatch).**
+You are using the old tuple form for the `schema` argument: `("conv_rate", ValueType.FLOAT)`. Modern Feast rejects `ValueType.FLOAT` because it is not a `FeastType`. Use the typed `Field` API and import the column types from `feast.types`:
+
+```python
+from feast import Field
+from feast.types import Float64, Int64
+
+schema=[
+    Field(name="conv_rate", dtype=Float64),
+    Field(name="acc_rate", dtype=Float64),
+    Field(name="avg_daily_trips", dtype=Int64),
+],
+```
+
+**Error: `TypeError: unhashable type` or `Float32 vs Float64 mismatch` during materialize.**
+The Parquet file was written with `float32` columns, but the schema declares `Float64`. Cast in the batch generation:
+
+```python
+df["conv_rate"] = df["conv_rate"].astype("float64")
+df["acc_rate"] = df["acc_rate"].astype("float64")
+```
+
+before calling `to_parquet`.
+
+**Error: `TypeError: ... got an unexpected keyword argument 'entities'` when defining the `FeatureView`.**
+The keyword is `entities` and the value MUST be a list of `Entity` objects, not a list of strings. Pass the `driver` Entity object you created, not `"driver_id"`:
+
+```python
+driver_stats_fv = FeatureView(
+    name="driver_stats",
+    entities=[driver],   # not ["driver_id"]
+    ...
+)
+```
+
+**Error: `RuntimeError: Project name mismatch: ... vs feast_lab`.**
+The folder you are in does not match the `project` field in `feature_store.yaml`. Either `cd ~/code/feast-lab/feature_repo` first, or align the `project:` line in `feature_store.yaml` with your current directory. The folder name and the `project` field do not have to match, but if Feast finds a different value in the registry on S3 than in your local `feature_store.yaml`, you must re-run `feast apply` to overwrite the registry.
+
+**Error: `KeyError: 'entity_key_serialization_version'` or `KeyError: 'name'`.**
+The YAML heredoc did not expand the env vars. Most often the heredoc is quoted (`<<'EOF'`) so bash leaves `$FEAST_S3_BUCKET` literally in the file, and Feast then sees a key like `s3://$FEAST_S3_BUCKET/registry/...`. Re-run the heredoc with the unquoted `<<EOF` form, or hard-code the bucket name in the `registry:` line.
+
+**Error: `int() can't convert non-string with explicit base` when running the Python ping.**
+A shell variable is empty. Re-export `REDIS_PORT` and `REDIS_USERNAME` from the Cloud Tray panel and try again. If you see `port=int('$REDIS_PORT')` and the variable is empty, bash will pass the empty string to `int('')`, which raises that error.
 
 **Error: `ModuleNotFoundError: No module named 'feast'`.**
 You are not inside the virtual environment. Run `source ~/code/feast-lab/.venv/bin/activate` and try again. If `which feast` still prints nothing, run `pip install "feast[aws,redis]"` from inside the venv.
@@ -775,22 +828,8 @@ You are not inside the virtual environment. Run `source ~/code/feast-lab/.venv/b
 **Error: `bash: feast: command not found`.**
 Same as above: the venv is not active. Run `source ~/code/feast-lab/.venv/bin/activate` and try again. If `which feast` still prints nothing, run `pip install "feast[aws,redis]" pandas pyarrow` from inside the venv.
 
-**Error: `feast init` keeps asking for a Redshift cluster ID, or fails with `RedshiftCredentialsError: Redshift API failed due to incorrect credentials`.**
-You ran `feast init feature_repo --template aws`. That template is for the Redshift offline store, which this lab does not use. Delete the half-created `feature_repo/` and re-run with the default template:
-
-```bash
-cd ~/code/feast-lab
-rm -rf feature_repo
-feast init feature_repo
-```
-
-Accept the default template when prompted. The lab overwrites `feature_store.yaml` in Step 8 anyway, so the template choice only affects the initial scaffolding, not the final configuration.
-
 **Error: `bash: redis-cli: command not found`.**
 `redis-cli` is not pre-installed on the Poridhi lab VM. Either install it (`sudo apt-get update && sudo apt-get install -y redis-tools`) or skip it and use the Python ping snippet from Step 6.
-
-**Error: `bash: code: command not found` (or `bash: nano: command not found`, `bash: xdg-open: command not found`) when trying to open `feature_store.yaml` or `example_repo.py`.**
-The Poridhi lab VM only ships with `vim` for terminal editing; the VS Code CLI, `nano`, and `xdg-open` are not installed. Use `vim feature_store.yaml` (or `vim example_repo.py`) as shown in Step 8 and Step 9.
 
 **Error: `ModuleNotFoundError: No module named 'redis'`.**
 You are using the Python fallback but the `redis` package is not installed. Run `pip install redis` from inside the virtual environment, then re-run the ping command.
@@ -801,8 +840,8 @@ Pandas is required for the Parquet generation and `get_historical_features` snip
 **Error: `FileSource path 'data/driver_stats*.parquet' not found` during materialize.**
 The glob in `driver_repo.py` does not match any files. Make sure you ran the Parquet generation in Step 10 from inside `~/code/feast-lab/feature_repo`. Run `ls data/` to confirm the files exist.
 
-**Error: `Entity 'driver_id' not registered`.**
-This usually means `feast apply` did not complete successfully. Look at the full error message, fix the underlying issue, and re-run `feast apply`.
+**Error: `feast materialize-incremental` finishes with 0 rows written.**
+The end timestamp is the same as the data, and Feast treats the end as **exclusive**. Pass a timestamp one day after the latest batch, e.g. `feast materialize-incremental 2026-01-23T00:00:00` for data dated `2026-01-22T00:00:00`.
 
 **Error: `feast materialize-incremental` reports "no new data" even though a new Parquet file was added.**
 Two likely causes: (1) the `FileSource` glob in `driver_repo.py` does not include the new file. Check the `path` argument. (2) The end timestamp you passed is older than the new file's `event_timestamp`. Pass a later end timestamp, for example `feast materialize-incremental 2026-01-25T00:00:00`.

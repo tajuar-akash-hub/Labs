@@ -1,0 +1,10 @@
+project: feast_lab
+registry: s3://feast-offline-store-1791821237/registry/registry.db
+provider: aws
+offline_store:
+  type: file
+  region: ap-southeast-1
+online_store:
+  type: redis
+  connection_string: redis://redis:redis@100.80.93.231:6379
+entity_key_serialization_version: 3
