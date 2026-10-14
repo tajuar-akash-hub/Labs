@@ -107,21 +107,27 @@ sudo apt install -y python3-venv python3-pip
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install "feast[redis]==0.40.1" pandas pyarrow numpy
+# Pin numpy, pandas, and pyarrow first so the resolver picks a working trio on
+# Python 3.10/3.11/3.12. Without these pins, pip may install a pyarrow that is
+# not ABI-compatible with numpy on Python 3.12, which makes pandas.to_parquet
+# raise "Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'".
+pip install "numpy>=2.0,<3" "pandas>=2.2" "pyarrow>=14"
+pip install "feast[redis]==0.40.1"
 ```
 
-Confirm the installs:
+Confirm the installs (this also proves pyarrow is loadable, which is the actual root cause of the Step 6 error):
 
 ```bash
 feast --version
-python -c "import feast, redis, pandas, pyarrow; print('feast', feast.__version__, '| redis-py', redis.__version__, '| pandas', pandas.__version__)"
+python -c "import feast, redis, pandas, pyarrow; print('feast', feast.__version__, '| redis-py', redis.__version__, '| pandas', pandas.__version__, '| pyarrow', pyarrow.__version__)"
 ```
 
-Expected: a `feast` version starting with `0.40` and four successful imports.
+Expected: a `feast` version starting with `0.40`, four successful imports, and a `pyarrow` version printed (something like `14.0.2` or `15.x` or `16.x`).
 
-> **Would I get an error if I ran this?** Possibly. Two things can fail:
+> **Would I get an error if I ran this?** Possibly. Three things can fail, in order of likelihood on a Poridhi VM:
 > 1. `python3 -m venv .venv` fails on a VM without `python3-venv` installed. The `apt install` line above installs it. If `apt` complains about a locked dpkg, wait a minute and retry, or run `sudo apt install -y python3-venv` on its own.
-> 2. `pip install "feast[redis]==0.40.1"` can fail to build a wheel on Python 3.9 or older. If you see "Could not build wheels for ...", check `python -V`: if it prints 3.9 or older, ask the lab UI for a VM with Python 3.10 or 3.11, or drop the version pin and let pip pick a compatible Feast (Feast 0.30+ supports Python 3.9).
+> 2. `ImportError: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'` (confirmed on Python 3.12 by a Poridhi user in October 2026): the original one-line `pip install "feast[redis]==0.40.1" pandas pyarrow numpy` left `pyarrow` uninstalled or installed a `pyarrow` whose numpy ABI does not match the resolved `numpy`. Re-activate the venv (`source .venv/bin/activate`) and re-run the three pinned install lines, in order. Verify with `python -c "import pyarrow; print(pyarrow.__version__)"` before moving on. If `pyarrow` still fails to import after a clean install, run `pip install --upgrade --force-reinstall "pyarrow>=14"` and retry.
+> 3. `pip install "feast[redis]==0.40.1"` can fail to build a wheel on Python 3.9 or older. If you see "Could not build wheels for ...", check `python -V`: if it prints 3.9 or older, ask the lab UI for a VM with Python 3.10 or 3.11, or drop the version pin and let pip pick a compatible Feast (Feast 0.30+ supports Python 3.9).
 
 ### Step 4: Test the connection to managed Redis
 
@@ -891,3 +897,7 @@ The bigger picture is that batch materialization and push ingestion are compleme
 ## Conclusion
 
 Lab 7.4 extended the Feast project from the earlier labs with a streaming ingestion path. You installed Feast, wired it to the Poridhi managed Redis, declared a `PushSource` bound to a `FileSource` batch source, and called `store.push()` from the Python SDK and `POST /push` over HTTP to write feature vectors straight to Redis. You then called `get_online_features()` and measured single-digit millisecond round-trips, proved the writes by inspecting Redis hashes and the `HSET` counter, compared the three `PushMode` options, and benchmarked latency with percentiles. The takeaway is simple: use `feast.push()` with `PushMode.ONLINE_AND_OFFLINE` when the model needs the signal in the same second and you also need the row for training; use `PushMode.ONLINE` alone when only the online store matters.
+
+## Iteration Notes
+
+- 2026-10-15: Step 3 install block changed. The single-line `pip install "feast[redis]==0.40.1" pandas pyarrow numpy` left `pyarrow` missing or broken on the Python 3.12 Poridhi VM, which made `pandas.to_parquet` fail in Step 6 with `ImportError: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'`. Replaced with the defensive three-line install: pin `numpy>=2.0,<3`, `pandas>=2.2`, `pyarrow>=14` first, then `feast[redis]==0.40.1`. Also added a `pyarrow.__version__` line to the install-verification command. Confirmed on Python 3.12.
