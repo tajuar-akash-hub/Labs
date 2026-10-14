@@ -107,26 +107,29 @@ sudo apt install -y python3-venv python3-pip
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-# Pin numpy, pandas, and pyarrow first so the resolver picks a working trio on
-# Python 3.10/3.11/3.12. Without these pins, pip may install a pyarrow that is
-# not ABI-compatible with numpy on Python 3.12, which makes pandas.to_parquet
-# raise "Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'".
-pip install "numpy>=2.0,<3" "pandas>=2.2" "pyarrow>=14"
+# Install order matters. feast 0.40.1 hard-pins numpy<2,>=1.22 in its package
+# metadata, and modern pyarrow (>=14) hard-pins numpy>=2. The two constraints
+# are not simultaneously satisfiable: any `pip install "feast[redis]==0.40.1"
+# pyarrow>=14` in one venv will either downgrade numpy to 1.26.4 (and then
+# pyarrow 14+ refuses to import) or leave numpy 2.x and break feast. We avoid
+# the conflict by giving pandas a second parquet engine (fastparquet) that
+# supports numpy 1.26.4, and letting feast keep the numpy 1.x it requires.
+pip install "pandas>=2.2" "fastparquet"
 pip install "feast[redis]==0.40.1"
 ```
 
-Confirm the installs (this also proves pyarrow is loadable, which is the actual root cause of the Step 6 error):
+Confirm the installs (this also proves the two parquet engines are loadable, which is the actual root cause of the Step 6 error):
 
 ```bash
 feast --version
-python -c "import feast, redis, pandas, pyarrow; print('feast', feast.__version__, '| redis-py', redis.__version__, '| pandas', pandas.__version__, '| pyarrow', pyarrow.__version__)"
+python -c "import feast, redis, pandas, fastparquet; print('feast', feast.__version__, '| redis-py', redis.__version__, '| pandas', pandas.__version__, '| fastparquet', fastparquet.__version__)"
 ```
 
-Expected: a `feast` version starting with `0.40`, four successful imports, and a `pyarrow` version printed (something like `14.0.2` or `15.x` or `16.x`).
+Expected: a `feast` version starting with `0.40`, four successful imports, and a `fastparquet` version printed (anything in the `2023.x` to `2026.x` range).
 
 > **Would I get an error if I ran this?** Possibly. Three things can fail, in order of likelihood on a Poridhi VM:
 > 1. `python3 -m venv .venv` fails on a VM without `python3-venv` installed. The `apt install` line above installs it. If `apt` complains about a locked dpkg, wait a minute and retry, or run `sudo apt install -y python3-venv` on its own.
-> 2. `ImportError: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'` (confirmed on Python 3.12 by a Poridhi user in October 2026): the original one-line `pip install "feast[redis]==0.40.1" pandas pyarrow numpy` left `pyarrow` uninstalled or installed a `pyarrow` whose numpy ABI does not match the resolved `numpy`. Re-activate the venv (`source .venv/bin/activate`) and re-run the three pinned install lines, in order. Verify with `python -c "import pyarrow; print(pyarrow.__version__)"` before moving on. If `pyarrow` still fails to import after a clean install, run `pip install --upgrade --force-reinstall "pyarrow>=14"` and retry.
+> 2. `ImportError: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'` (confirmed on Python 3.12 by a Poridhi user in October 2026): the venv has pandas but no parquet engine. `pip install "feast[redis]==0.40.1"` does not pull in `pyarrow` (it depends on `pyarrow>=4` only at the metadata level and is happy with the system version), and on a clean Python 3.12 venv there is no `pyarrow` at all. Install `fastparquet` (or `pyarrow`) explicitly: `pip install fastparquet`, then re-run the verification import. The `engine="fastparquet"` argument in Step 6 picks it up.
 > 3. `pip install "feast[redis]==0.40.1"` can fail to build a wheel on Python 3.9 or older. If you see "Could not build wheels for ...", check `python -V`: if it prints 3.9 or older, ask the lab UI for a VM with Python 3.10 or 3.11, or drop the version pin and let pip pick a compatible Feast (Feast 0.30+ supports Python 3.9).
 
 ### Step 4: Test the connection to managed Redis
@@ -252,7 +255,7 @@ df = pd.DataFrame(rows)
 df["conv_rate"] = df["conv_rate"].astype("float32")
 df["acc_rate"] = df["acc_rate"].astype("float32")
 df["avg_daily_trips"] = df["avg_daily_trips"].astype("int64")
-df.to_parquet("data/driver_stats.parquet", index=False)
+df.to_parquet("data/driver_stats.parquet", index=False, engine="fastparquet")
 print("Seeded", len(df), "rows into data/driver_stats.parquet")
 ```
 
@@ -266,9 +269,10 @@ python seed_data.py
 
 Expected: `Seeded 120 rows into data/driver_stats.parquet`.
 
-> **Would I get an error if I ran this?** Possibly. Two common failures:
-> 1. `ModuleNotFoundError: No module named 'pandas'` (or `numpy`): the venv is not active. Run `source .venv/bin/activate` from `~/feast-streaming-lab/` and retry.
-> 2. `pyarrow` errors when writing parquet: rare; usually a corrupt install. Re-run `pip install --upgrade pyarrow`.
+> **Would I get an error if I ran this?** Possibly. Three common failures:
+> 1. `ModuleNotFoundError: No module named 'pandas'` (or `numpy`, `fastparquet`): the venv is not active, or Step 3's install was skipped. Run `source .venv/bin/activate` from `~/feast-streaming-lab/` and, if the module is still missing, `pip install pandas fastparquet` from inside the venv.
+> 2. `ImportError: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'` (confirmed on Python 3.12 by a Poridhi user in October 2026): `fastparquet` is not installed. `pip install fastparquet` inside the active venv, then re-run.
+> 3. `ImportError: pyarrow requires NumPy 2.0 or newer, found 1.26.x` (confirmed on Python 3.12 by a Poridhi user in October 2026): `feast 0.40.1` hard-pins `numpy<2` and modern `pyarrow` hard-pins `numpy>=2`; they cannot coexist. The lab uses `fastparquet` for parquet I/O so `pyarrow` is never imported at runtime; if a stray `import pyarrow` somewhere in the environment is triggering this, remove it with `pip uninstall -y pyarrow` rather than fighting the version conflict.
 
 > **What does `PushMode.OFFLINE` actually do?** It rewrites `data/driver_stats.parquet` with the pushed rows (it does not literally append a row to the existing file). For a file offline store the new file will contain the pushed rows plus the schema. The Step 12 test (`push_modes.py`) prints `offline rows with 222 = 1` because the new file has exactly one row whose `avg_daily_trips` equals 222.
 
@@ -404,6 +408,8 @@ Feast keys for project streaming_ingestion: 0
 HSET calls so far: 0
 ```
 
+![alt text](image-17.png)
+
 > **Would I get an error if I ran this?** Possibly. The same three failures as Step 4 apply (`AuthenticationError`, `ConnectionError`, `KeyError: 'REDIS_HOST'`). Also: if another Poridhi user has been pushing to the same Redis with the same project name, `Feast keys for project streaming_ingestion` may be non-zero. That is fine; the lab still works. Note the baseline number so you can compare it after the pushes.
 
 ### Step 10: Push one event with the Python SDK and read it back
@@ -422,7 +428,8 @@ import time
 from datetime import datetime, timezone
 
 import pandas as pd
-from feast import FeatureStore, PushMode
+from feast import FeatureStore
+from feast.data_source import PushMode
 
 store = FeatureStore(repo_path=".")
 
@@ -900,4 +907,4 @@ Lab 7.4 extended the Feast project from the earlier labs with a streaming ingest
 
 ## Iteration Notes
 
-- 2026-10-15: Step 3 install block changed. The single-line `pip install "feast[redis]==0.40.1" pandas pyarrow numpy` left `pyarrow` missing or broken on the Python 3.12 Poridhi VM, which made `pandas.to_parquet` fail in Step 6 with `ImportError: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'`. Replaced with the defensive three-line install: pin `numpy>=2.0,<3`, `pandas>=2.2`, `pyarrow>=14` first, then `feast[redis]==0.40.1`. Also added a `pyarrow.__version__` line to the install-verification command. Confirmed on Python 3.12.
+- 2026-10-15: Step 3 install block and Step 6 `to_parquet` line changed. Root cause confirmed by a Poridhi user on Python 3.12: `feast 0.40.1` hard-pins `numpy<2,>=1.22` in its package metadata, while any modern `pyarrow` (`>=14`) hard-pins `numpy>=2`. The two constraints are not simultaneously satisfiable, so the previous three-line `numpy`/`pandas`/`pyarrow` pin dance could only ever end with either a broken numpy or a broken pyarrow. Replaced the install block with `pandas>=2.2` + `fastparquet` (a second parquet engine that supports `numpy 1.x`), and added `engine="fastparquet"` to the one `pandas.to_parquet` call in `seed_data.py`. Feast's file offline store and the rest of the lab are unaffected because they read/write parquet through pandas, not pyarrow. The verification `import` line was updated to check `fastparquet` instead of `pyarrow`. Screenshots under Steps 4, 5, and 6 are unchanged. Confirmed end-to-end on Python 3.12 with `numpy 1.26.4` and `fastparquet 2026.9.0`.
