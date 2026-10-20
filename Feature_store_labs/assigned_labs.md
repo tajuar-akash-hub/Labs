@@ -1,4 +1,4 @@
-![alt text](image.png)
+![alt text](images/image.png)
 
 # ◆ MODULE 7: Feature Stores
 

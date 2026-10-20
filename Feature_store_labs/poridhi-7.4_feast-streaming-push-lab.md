@@ -8,7 +8,7 @@ This is where **streaming ingestion** comes in. Feast exposes a method called `f
 
 In this lab you will install Feast, wire it to the Poridhi managed Redis, define a `driver_stats` feature view, push events with the Python SDK and over HTTP, inspect the raw keys in Redis, compare the three `PushMode` options, and benchmark push and read-after-write latency with percentiles. The lab is fully self-contained: every step runs from a clean Poridhi VM, even if you have not completed Labs 7.2 or 7.3.
 
-![alt text](image-11.png)
+![alt text](images/image-11.png)
 
 Inside the VM, the **Producer** is either the **Stream Simulator** (`producer.py`) that calls `store.push()` from Python, or an **HTTP client** (`curl`) that hits the Feast Feature Server on port 6566. Both target the same `PushSource` named `driver_stats_push`, which is bound to a `FileSource` batch source. The **FeatureView** `driver_stats_stream` declares the features, the entity, and the TTL.
 
@@ -94,7 +94,7 @@ echo "Redis target: $REDIS_HOST:$REDIS_PORT as user $REDIS_USERNAME"
 
 Expected: a line like `Redis target: 10.10.0.5:6379 as user default`. If `source env.sh` prints nothing, the file is empty; re-open it and paste again.
 
-![alt text](image-12.png)
+![alt text](images/image-12.png)
 
 > **Would I get an error if I ran this?** No. The only failure mode is forgetting to load `env.sh` in a new terminal, in which case later steps will print `KeyError: 'REDIS_HOST'`. If that happens, run `cd ~/feast-streaming-lab && source env.sh` and retry.
 
@@ -157,7 +157,7 @@ PING: True
 Redis version: 7.0.15
 ```
 
-![alt text](image-13.png)
+![alt text](images/image-13.png)
 
 > **Would I get an error if I ran this?** Possibly. Common failures:
 > 1. `redis.exceptions.AuthenticationError` or `WRONGPASS`: the credentials in `env.sh` do not match the current Cloud Tray session. Reopen the Redis card, copy the fresh values, update `env.sh`, and re-run `source env.sh`.
@@ -213,7 +213,7 @@ If the file is empty, contains the literal words `YAML_END` or `grep` on their o
 ls -la
 ```
 
-![alt text](image-14.png)
+![alt text](images/image-14.png)
 
 > **Would I get an error if I ran this?** No, this step just creates a file. The error would only show up at `feast apply` time. See Step 8 for the connection-string failure mode.
 
@@ -265,7 +265,7 @@ Save with `:wq`. Run it:
 python seed_data.py
 ```
 
-![alt text](image-15.png)
+![alt text](images/image-15.png)
 
 Expected: `Seeded 120 rows into data/driver_stats.parquet`.
 
@@ -346,7 +346,7 @@ NAME                 ENTITIES   TYPE
 driver_stats_stream  {'driver'} FeatureView
 ```
 
-![alt text](image-16.png)
+![alt text](images/image-16.png)
 
 If you re-run `feast apply` on the same definitions, the output ends with `No changes to registry` instead of `Created ...`. That is normal and means the registry is already in sync.
 
@@ -408,7 +408,7 @@ Feast keys for project streaming_ingestion: 0
 HSET calls so far: 0
 ```
 
-![alt text](image-17.png)
+![alt text](images/image-17.png)
 
 > **Would I get an error if I ran this?** Possibly. The same three failures as Step 4 apply (`AuthenticationError`, `ConnectionError`, `KeyError: 'REDIS_HOST'`). Also: if another Poridhi user has been pushing to the same Redis with the same project name, `Feast keys for project streaming_ingestion` may be non-zero. That is fine; the lab still works. Note the baseline number so you can compare it after the pushes.
 

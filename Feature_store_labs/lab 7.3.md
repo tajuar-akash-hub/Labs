@@ -6,7 +6,7 @@ Feast solves the training-serving skew by giving both training and inference a s
 
 This lab is fully self-contained: every step is repeated from a clean state, so you can run it cold on a fresh Poridhi lab VM. You will set up Feast with S3 (offline) and the Poridhi managed Redis (online), generate multiple Parquet batches, run `feast materialize-incremental` to push the latest snapshot into Redis, then call `get_historical_features()` to build a point-in-time-correct training DataFrame.
 
-![alt text](image.png)
+![alt text](images/image.png)
 
 ## Learning Objectives
 
@@ -91,7 +91,7 @@ python -m pip install --upgrade pip
 
 You should now be inside an isolated Python environment. Anything you install will only affect this folder. If you already completed a prior lab in this series, this step simply re-activates the same virtual environment and is safe to re-run.
 
-![alt text](image-1.png)
+![alt text](images/image-1.png)
 
 ### Step 3: Install Feast with AWS and Redis support
 
@@ -116,7 +116,7 @@ You should see a version string (for example `feast 0.39.0`) and the list of Fea
 pip show feast | grep Version
 ```
 
-![alt text](image-2.png)
+![alt text](images/image-2.png)
 
 ### Step 4: Configure AWS credentials and confirm access
 
@@ -133,7 +133,7 @@ If you would rather use the interactive prompt instead, you can run:
 aws configure
 ```
 
-![alt text](image-3.png)
+![alt text](images/image-3.png)
 
 and paste `AccessKey` for `AWS Access Key ID`, `SecretKey` for `AWS Secret Access Key`, `ap-southeast-1` for `Default region name`, and `json` for `Default output format`. Leave `Default profile` blank.
 
@@ -172,7 +172,7 @@ Confirm the bucket exists:
 aws s3 ls | grep "$FEAST_S3_BUCKET"
 ```
 
-![alt text](image-4.png)
+![alt text](images/image-4.png)
 
 Persist the bucket name for later steps:
 
@@ -200,7 +200,7 @@ python -c "import redis; r=redis.Redis(host='$REDIS_HOST', port=int('$REDIS_PORT
 
 Expected output: `True`. If you see `ModuleNotFoundError: No module named 'redis'`, install it first:
 
-![alt text](image-5.png)
+![alt text](images/image-5.png)
 
 ```bash
 pip install redis
@@ -228,7 +228,7 @@ cd ~/code/feast-lab/feature_repo
 
 You should now be in `~/code/feast-lab/feature_repo`. The next two steps write `feature_store.yaml` and `driver_repo.py` directly into this folder.
 
-![alt text](image-6.png)
+![alt text](images/image-6.png)
 
 ### Step 8: Write `feature_store.yaml`
 
@@ -337,7 +337,7 @@ Notes about the file:
 - `entities=[driver]` passes the `Entity` object. The old string form (`entities=["driver_id"]`) is rejected with `Entity 'driver_id' not found` because Feast no longer resolves the name from the registry lookup; you must pass the object.
 - `ttl=timedelta(days=3650)` makes the view remember the last ~10 years of values. The default `ttl=timedelta(days=1)` would silently exclude older batches from the online store and from point-in-time joins.
 
-![alt text](image-7.png)
+![alt text](images/image-7.png)
 
 ### Step 10: Generate four Parquet batches
 
@@ -412,7 +412,7 @@ print("Wrote data/driver_stats_batch4.parquet with", len(df4), "rows")
 PY
 ```
 
-![alt text](image-8.png)
+![alt text](images/image-8.png)
 
 Verify the files are present and the glob will pick them up:
 
@@ -423,7 +423,7 @@ ls -la data/
 
 Expected: `driver_stats.parquet`, `driver_stats_batch2.parquet`, `driver_stats_batch3.parquet`, and `driver_stats_batch4.parquet` all listed.
 
-![alt text](image-9.png)
+![alt text](images/image-9.png)
 
 ### Step 11: Apply the feature definition
 
@@ -433,7 +433,7 @@ Now run `feast apply`. This validates the definitions, uploads the registry to S
 feast apply
 ```
 
-![alt text](image-10.png)
+![alt text](images/image-10.png)
 
 Expected output (truncated):
 
