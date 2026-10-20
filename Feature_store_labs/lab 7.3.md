@@ -1,12 +1,12 @@
-# Lab 7.3: Batch Feature Ingestion
-
 ## Introduction
+
+This lab, **Batch Feature Ingestion with Feast and Managed Redis**, walks through setting up a batch ingestion loop on the Poridhi lab VM so that the offline store and online store stay in sync without manual intervention.
 
 Feast solves the training-serving skew by giving both training and inference a single shared feature definition backed by two stores: an **offline store** (S3) for historical reads and an **online store** (Redis) for low-latency inference. The next problem is keeping those two stores in sync. **Batch ingestion** is the workhorse of every production feature store: a scheduled job writes new feature values to the offline store and then calls `feast materialize-incremental` to push the latest values into the online store, after which training jobs use `get_historical_features()` to build point-in-time-correct DataFrames and inference services use `get_online_features()` for sub-10ms reads.
 
 This lab is fully self-contained: every step is repeated from a clean state, so you can run it cold on a fresh Poridhi lab VM. You will set up Feast with S3 (offline) and the Poridhi managed Redis (online), generate multiple Parquet batches, run `feast materialize-incremental` to push the latest snapshot into Redis, then call `get_historical_features()` to build a point-in-time-correct training DataFrame.
 
-![alt text](images/image.png)
+![Feature_store_labs/animation/7.3_main_structure.svg](animation/7.3_main_structure.svg)
 
 ## Learning Objectives
 
@@ -23,13 +23,31 @@ By the end of this lab, you will be able to:
 - Build a labeled `entity_df` in Pandas and call `get_historical_features()` to produce a point-in-time-correct training DataFrame.
 - Verify the online store with `get_online_features()` and confirm a value changed after a new batch landed.
 
+### Folder Structure
+
+The lab creates the following folders and files on the Poridhi Lab VM. Every `mkdir -p`, `cd`, and file-creation step in the lab matches this tree exactly.
+
+```text
+~/code/feast-lab/
+└── feature_repo/
+    ├── feature_store.yaml
+    ├── driver_repo.py
+    └── data/
+        ├── driver_stats.parquet          # batch 1, 2026-01-01
+        ├── driver_stats_batch2.parquet   # batch 2, 2026-01-08
+        ├── driver_stats_batch3.parquet   # batch 3, 2026-01-15
+        ├── driver_stats_batch4.parquet   # batch 4, 2026-01-22
+        └── entity_df.parquet             # labeled training rows
+```
+
 ## Prerequisites
 
-- **Environment:** Poridhi Cloud lab VM with Linux (Debian/Ubuntu shell), VS Code pre-installed, and an active Poridhi Cloud Playground session.
+- **Region:** `ap-southeast-1` (Asia Pacific, Singapore). All AWS resources (S3 bucket, IAM, CLI default) are pinned to this region.
+- **Environment:** Poridhi Cloud lab VM running Linux (Debian/Ubuntu shell), with VS Code pre-installed in the lab UI and an active Poridhi Cloud Playground session. The lab creates its files in `~/code/feast-lab/`: Step 2.1 shows the one-time VS Code Command Palette step (`Shell Command: Install 'code' command in PATH`) so the Explorer can open that folder. After that, every file in this lab is created by right-clicking the folder in the VS Code Explorer and choosing `New File…`; no shell-level text editors are used.
+- **Storage:** Managed AWS S3 bucket in `ap-southeast-1`, created with `aws s3api create-bucket` in Step 5. Credentials are short-lived and come from the Poridhi Cloud Playground lab UI. The bucket is destroyed with the lab session and is not torn down explicitly.
 - **Cloud Tray: Redis (managed, already running):** Open the Cloud Tray in the Poridhi lab UI, click **Database**, then click the **Redis** card. The panel shows the actual credentials for this lab session: **Username**, **Password**, **IP Address**, **Port**, and a copy-able **Connection String**. The values can change between lab runs, so always read them from the panel instead of hard-coding them.
-- **AWS credentials:** Generate a credential from the Poridhi Cloud Playground lab UI (Generate credential button). Region is `ap-southeast-1` (Singapore).
-- **Region:** `ap-southeast-1` (Asia Pacific, Singapore). The S3 bucket and IAM are region-wide; the lab references AZs `ap-southeast-1a`, `ap-southeast-1b`, `ap-southeast-1c` in diagrams but does not pin resources to specific AZs.
-- **Tools already on the VM:** `python3` (3.9+), `pip`, `aws` CLI, and `vim` (already at `/usr/bin/vim`) for editing config files. The VS Code CLI (`code`), `nano`, and `xdg-open` are NOT available in the default lab VM, so do not rely on them. `redis-cli` is also NOT pre-installed: use the Python fallback shown in the lab to test the managed Redis.
+- **AWS credentials:** Generate a credential from the Poridhi Cloud Playground lab UI (Generate credential button). Region is `ap-southeast-1` (Singapore). The SessionToken field may or may not appear: treat it as optional.
+- **Tools already on the VM:** `python3` (3.9+), `pip`, `aws` CLI. The `redis` Python client is installed in Step 3 if missing. `redis-cli` is also NOT pre-installed; use the Python fallback in Step 6. The lab never invokes `vim`, `nano`, `cat`, `tee`, `xdg-open`, or any shell-level write to create files.
 - **Note on prior labs:** This lab is part of the Feature Store series (7.1 through 7.8). It is fully self-contained, so you do NOT need to have completed Lab 7.2 first. Every step, from creating the venv to running `feast apply`, is repeated here. If you have already completed Lab 7.2, those steps simply recreate the same artifacts and run idempotent commands.
 
 ## Prologue
@@ -41,6 +59,8 @@ The fix is to make features a first-class artifact with one definition and two a
 ## Step-by-Step Implementation
 
 ### Step 1: Collect credentials from the Poridhi lab UI
+
+> Note: this step collects two sets of credentials (AWS and managed Redis) once and stores them locally. Every later step references them as shell variables, so the values never need to be pasted again.
 
 Before you start, collect two sets of credentials from the Poridhi lab UI. You will paste them once, and the rest of the lab will use the resulting env vars.
 
@@ -79,6 +99,8 @@ export REDIS_PASSWORD="<paste-password-from-cloud-tray>"
 
 ### Step 2: Create the project directory and Python virtual environment
 
+> Note: this step creates the project directory `~/code/feast-lab` and the Python virtual environment that Step 3 onward uses.
+
 Open a terminal on the lab VM and run:
 
 ```bash
@@ -93,12 +115,35 @@ You should now be inside an isolated Python environment. Anything you install wi
 
 ![alt text](images/image-1.png)
 
+#### Step 2.1: Make VS Code see the project folder (one-time setup)
+
+VS Code's Explorer only shows the folder that was opened with `File > Open Folder`, and the `code` shell command is not on `PATH` on the default Poridhi Lab VM. Do this once at the start of the lab so the Explorer follows every `mkdir` and every file you create for the rest of the lab:
+
+1. **Open the VS Code Command Palette.** Press `Ctrl+Shift+P` (Linux) inside any VS Code window — or open VS Code and use `View → Command Palette`.
+2. **Install the `code` CLI.** Type `Shell Command: Install 'code' command in PATH` and press `Enter`. Wait for the small "Shell Command successfully installed in PATH" notification at the bottom-right of VS Code.
+3. **Trust the new PATH.** Open a fresh terminal (or `source ~/.bashrc`) so the shell picks up the new `code` binary.
+4. **Open the project folder.** Run:
+
+   ```bash
+   code ~/code/feast-lab
+   ```
+
+   Confirm the Explorer panel on the left shows the path `FEAST-LAB` (or `feast-lab`) and is now rooted at `~/code/feast-lab`. If the label did not flip, use `File → Open Folder…` from the VS Code menu and pick `~/code/feast-lab` manually.
+
+After this one-time setup, every later step that creates a file just tells you to right-click a folder in the Explorer and choose `New File…`.
+
 ### Step 3: Install Feast with AWS and Redis support
+
+> Note: this step installs Feast plus its AWS and Redis extras, then pins the transitive `numpy` floor that newer `pandas`/`pyarrow` wheels require.
 
 Install Feast plus the AWS and Redis extras. This pulls in `boto3`, `redis`, and the S3 file source plugin. The lab also needs `pandas` and `pyarrow` for Parquet generation and `get_historical_features`:
 
 ```bash
-pip install "feast[aws,redis]" pandas pyarrow
+pip install --upgrade pip
+```
+
+```bash
+pip install "numpy>=2.0,<3" "pandas>=2" "pyarrow>=14" "feast[aws,redis]"
 ```
 
 Verify the install:
@@ -119,6 +164,8 @@ pip show feast | grep Version
 ![alt text](images/image-2.png)
 
 ### Step 4: Configure AWS credentials and confirm access
+
+> Note: this step sets the AWS default region to `ap-southeast-1` and verifies the credentials with `aws sts get-caller-identity`.
 
 Set the default region and output format:
 
@@ -148,6 +195,8 @@ aws sts get-caller-identity
 Expected output: a JSON document with your account ID, an `arn` containing `assumed-role`, and `ap-southeast-1` somewhere in the metadata.
 
 ### Step 5: Create the S3 bucket for the offline store
+
+> Note: this step creates a globally unique S3 bucket in `ap-southeast-1` that Step 8 uses as both the Feast offline store and the registry location.
 
 Pick a globally unique bucket name and create it in `ap-southeast-1`. A timestamp suffix guarantees uniqueness across lab runs:
 
@@ -181,7 +230,11 @@ echo "export FEAST_S3_BUCKET=$FEAST_S3_BUCKET" >> ~/.bashrc
 export FEAST_S3_BUCKET=$FEAST_S3_BUCKET
 ```
 
+> **Write down your bucket name now.** Run `echo "$FEAST_S3_BUCKET"` in the same terminal and copy the output: it will look like `feast-offline-store-1792384265` (your value will differ). You will paste that exact value into `feature_store.yaml` in Step 8 (replacing the `your-unique-bucket-name` placeholder). The `$FEAST_S3_BUCKET` env var is also fine to keep using; just remember the value in case you start a new terminal session before Step 8 and the env var is no longer set. If you lose it, run `echo "$FEAST_S3_BUCKET"` again in the same terminal where you exported it. (The bucket itself persists in S3; only the local shell variable needs restoring.)
+
 ### Step 6: Confirm the Poridhi managed Redis is reachable
+
+> Note: this step reads the managed Redis credentials from the Cloud Tray, exports them as shell variables, and pings the service from Python so Step 8 can wire them into `feature_store.yaml`.
 
 Re-open the Poridhi Cloud Tray in the lab UI, click **Database**, then click the **Redis** card. Re-read the **Username**, **Password**, **IP Address**, and **Port** from the panel and export them as shell variables (you already did this in Step 1, but re-run the exports if you started a new terminal session):
 
@@ -217,6 +270,8 @@ Expected output: `PONG`. The lab works either way; pick one and continue.
 
 ### Step 7: Create the Feast project folder (no `feast init`)
 
+> Note: this step creates `~/code/feast-lab/feature_repo` directly without using `feast init`, because the scaffolded `feature_definitions.py` collides with the feature definition we will write in Step 9.
+
 Recent versions of `feast init` create a nested folder `feature_repo/feature_repo/` and ship a `feature_definitions.py` that defines its own `Project`, `Entity`, `FeatureView`, and `LabelView`. Because `feast apply` scans every `.py` file under the repo, that scaffolded file would collide with the definitions we write below and cause `PydanticValidationError: Entity 'driver' is already registered` or `extra fields not permitted` errors.
 
 Skip the scaffold and create the project folder by hand. The whole `feature_repo/` only needs a `data/` subfolder and a `feature_store.yaml`:
@@ -232,45 +287,35 @@ You should now be in `~/code/feast-lab/feature_repo`. The next two steps write `
 
 ### Step 8: Write `feature_store.yaml`
 
-Write the configuration file with a heredoc. The credentials and bucket name are pulled from the env vars you exported in Steps 1, 5, and 6, so the file works across lab sessions even when the Redis endpoint or the bucket name changes.
+> Note: this step writes `feature_store.yaml` in `~/code/feast-lab/feature_repo` so Feast knows the S3 bucket and the managed Redis endpoints.
 
-The connection string format is `host:port,username=...,password=...`. The `user:` and `password:` top-level keys were removed in modern Feast because Pydantic rejects unknown fields; all auth must go inside `connection_string`.
-
-> **Important:** the heredoc is unquoted (`<<EOF` rather than `<<'EOF'`) so bash expands `$FEAST_S3_BUCKET`, `$REDIS_HOST`, `$REDIS_PORT`, `$REDIS_USERNAME`, and `$REDIS_PASSWORD` into the final file. Make sure those env vars are still set in your current shell (re-export them from Step 1 / Step 5 / Step 6 if you opened a new terminal):
+Confirm the project directory is in place and `cd` into it (this matters after Step 7):
 
 ```bash
-cat > feature_store.yaml <<EOF
-project: feast_lab
-registry: s3://$FEAST_S3_BUCKET/registry/registry.db
-provider: aws
-offline_store:
-  type: file
-online_store:
-  type: redis
-  connection_string: $REDIS_HOST:$REDIS_PORT,username=$REDIS_USERNAME,password=$REDIS_PASSWORD
-entity_key_serialization_version: 3
-EOF
+mkdir -p ~/code/feast-lab/feature_repo
 ```
-
-Verify the file is correct:
 
 ```bash
-cat feature_store.yaml
+cd ~/code/feast-lab/feature_repo
 ```
 
-Expected output (your bucket name, host, port, username, and password will be different):
+Right-click the `feature_repo` folder in the VS Code Explorer (rooted at `FEAST-LAB` from Step 2.1), choose `New File…`, name the file `feature_store.yaml`, paste the YAML below into it, and save. Replace `your-unique-bucket-name` with the bucket name from Step 5 (the one you wrote down with `echo "$FEAST_S3_BUCKET"`), and replace `your-redis-host`, `your-redis-port`, `your-redis-username`, and `your-redis-password` with the values from the Cloud Tray Redis panel in Step 6:
 
 ```yaml
 project: feast_lab
-registry: s3://feast-offline-store-1791821237/registry/registry.db
+registry: s3://your-unique-bucket-name/registry/registry.db
 provider: aws
 offline_store:
   type: file
 online_store:
   type: redis
-  connection_string: 100.80.93.231:6379,username=redis,password=redis
+  connection_string: your-redis-host:your-redis-port,username=your-redis-username,password=your-redis-password
 entity_key_serialization_version: 3
 ```
+
+If you cannot remember the bucket name from Step 5, run `echo "$FEAST_S3_BUCKET"` in the terminal: that is the value to paste in for `your-unique-bucket-name`.
+
+Open the file in the Explorer and double-check the substitutions. The `connection_string` line must read like `100.80.93.231:6379,username=redis,password=redis` with your own host, port, username, and password instead of placeholders.
 
 Notes about this file:
 
@@ -279,19 +324,28 @@ Notes about this file:
 - `provider: aws`: tells Feast we want the AWS flavor of the offline store.
 - `offline_store.type: file`: tells Feast to use the file-based (S3 + Parquet) offline store. No `region` key is required for the file offline store; the bucket region is discovered from S3.
 - `online_store.type: redis`: tells Feast to use the Poridhi managed Redis for online lookups.
-- `connection_string: host:port,username=...,password=...`: the Poridhi managed Redis endpoint and credentials from the Cloud Tray panel. The auth fields must be embedded in the connection string itself, not as separate keys.
+- `connection_string: host:port,username=...,password=...`: the Poridhi managed Redis endpoint and credentials from the Cloud Tray panel. The auth fields must be embedded in the connection string itself, not as separate `user:` / `password:` top-level keys (modern Feast rejects those with `Extra inputs are not permitted`).
 - `entity_key_serialization_version: 3`: the modern serialization for Redis keys. Required by recent Feast versions.
+
+> Would I get an error if I ran this? Possibly: `Extra inputs are not permitted` if you accidentally paste `user: your-redis-username` and `password: your-redis-password` as separate top-level keys. Modern Feast requires the credentials to be embedded in `connection_string` only.
 
 ### Step 9: Write `driver_repo.py`
 
-The default `feast init` scaffold is intentionally avoided. Write the feature definition directly with the modern `Field` / `feast.types` API. This API:
+> Note: this step writes `driver_repo.py` (the feature definition for `driver_id`) in `~/code/feast-lab/feature_repo` using the modern `Field`/`feast.types` API.
 
-- Uses `Field(name=..., dtype=Float64)` (or `Int64`) instead of the deprecated `(name, ValueType)` tuples.
-- Passes the `Entity` **object** to `FeatureView(entities=[...])`, not the entity name as a string.
-- Uses `ttl=timedelta(days=3650)` so the ttl comfortably exceeds the four weekly batches we generate.
+Re-establish the project directory in case the shell changed:
 
 ```bash
-cat > driver_repo.py <<'PY'
+mkdir -p ~/code/feast-lab/feature_repo
+```
+
+```bash
+cd ~/code/feast-lab/feature_repo
+```
+
+Right-click the `feature_repo` folder in the VS Code Explorer, choose `New File…`, name the file `driver_repo.py`, paste the Python below into it, and save:
+
+```python
 """Feature definitions for the driver_stats feature view."""
 from datetime import timedelta
 
@@ -327,7 +381,6 @@ driver_stats_fv = FeatureView(
     source=driver_stats_source,
     online=True,
 )
-PY
 ```
 
 Notes about the file:
@@ -341,10 +394,16 @@ Notes about the file:
 
 ### Step 10: Generate four Parquet batches
 
-Create the `data/` folder if it does not exist:
+> Note: this step writes four Parquet files representing four weekly ETL landings. The `driver_stats*.parquet` glob in Step 9 picks all of them up.
+
+Re-establish the project directory and create the `data/` folder (this matters after Step 9's shell work):
 
 ```bash
-mkdir -p data
+mkdir -p ~/code/feast-lab/feature_repo/data
+```
+
+```bash
+cd ~/code/feast-lab/feature_repo
 ```
 
 Run this Python one-liner to create four Parquet files representing four daily ETL batches. Each file has a different `event_timestamp` and slightly different feature values per driver, which is what makes the point-in-time join meaningful:
@@ -427,6 +486,8 @@ Expected: `driver_stats.parquet`, `driver_stats_batch2.parquet`, `driver_stats_b
 
 ### Step 11: Apply the feature definition
 
+> Note: this step validates the feature definition and registers the `driver_stats` view in S3.
+
 Now run `feast apply`. This validates the definitions, uploads the registry to S3, and registers the feature view:
 
 ```bash
@@ -448,6 +509,8 @@ Applying changes for project feast_lab
 If you see errors, jump to the Troubleshooting section.
 
 ### Step 12: Verify the registry on S3
+
+> Note: this step confirms that Feast wrote the registry to the S3 bucket and that the feature view is registered locally.
 
 Confirm that Feast wrote the registry file to your bucket:
 
@@ -471,6 +534,8 @@ driver_stats driver_id   ReadableFeatureView True      METADATA_ONLY
 ```
 
 ### Step 13: Run the first incremental materialize
+
+> Note: this step pushes the latest snapshot (batch 4) from the offline store into the managed Redis.
 
 The first run materializes everything from the beginning of time up to the timestamp you pass. Feast treats the end timestamp as **exclusive**, so use a timestamp one day after the fourth batch landed (the fourth batch is dated `2026-01-22T00:00:00`). Pushing the end to `2026-01-23T00:00:00` makes sure the `2026-01-22T00:00:00` rows are included:
 
@@ -503,6 +568,8 @@ What just happened:
 - It wrote those rows to Redis, one key per driver, using the format that `get_online_features()` expects.
 
 ### Step 14: Verify the online store with `get_online_features()`
+
+> Note: this step verifies that Redis actually got populated and that the latest batch values are returned.
 
 Run a small Python script to confirm Redis actually got populated:
 
@@ -538,6 +605,8 @@ Notice the `conv_rate` for `driver_id=1001` is `0.90` (the latest value from bat
 
 ### Step 15: Re-run the materialize and observe the no-op behavior
 
+> Note: this step demonstrates that re-running `materialize-incremental` is a no-op.
+
 Re-run the same materialize command with the same end timestamp. Feast will see that there is nothing newer than the last successful run and report a no-op:
 
 ```bash
@@ -549,6 +618,8 @@ Expected output: a message such as `No new data to materialize` or an empty mate
 > **Key idea:** `materialize-incremental` is idempotent in the sense that it only writes rows that are newer than the last successful run. If you run it again with the same end timestamp, it will report that there is nothing new to materialize.
 
 ### Step 16: Build a labeled `entity_df` for training
+
+> Note: this step builds a labeled Pandas DataFrame of training observations and saves it as `entity_df.parquet`.
 
 Training jobs do not call `get_online_features()`. Instead, they pass Feast a Pandas `entity_df` that contains the entity keys, the labels, and the time at which the labels were observed. Feast then performs a point-in-time join so each row gets the feature values that were valid at that moment in time.
 
@@ -593,10 +664,21 @@ Notice that rows 0 and 1 were observed on `2026-01-01` (so they should get the b
 
 ### Step 17: Build a training DataFrame with `get_historical_features()`
 
-Create a small training script in the project folder:
+> Note: this step asks Feast for a point-in-time-correct training DataFrame by joining `entity_df` against the offline store.
+
+Confirm the project directory and `cd` into it:
 
 ```bash
-cat > train_dataframe.py <<'PY'
+mkdir -p ~/code/feast-lab/feature_repo
+```
+
+```bash
+cd ~/code/feast-lab/feature_repo
+```
+
+Right-click the `feature_repo` folder in the VS Code Explorer, choose `New File…`, name the file `train_dataframe.py`, paste the Python below into it, and save:
+
+```python
 """Build a point-in-time-correct training DataFrame using Feast."""
 import pandas as pd
 from feast import FeatureStore
@@ -622,7 +704,6 @@ print(training_df.to_string(index=False))
 # Quick correlation sanity check
 print("\n=== Correlation with label ===")
 print(training_df[["conv_rate", "acc_rate", "avg_daily_trips", "label_accepted_ride"]].corr(numeric_only=True)["label_accepted_ride"])
-PY
 ```
 
 Run it:
@@ -655,58 +736,9 @@ What just happened:
 - For row 2 (`driver_id=1003`, observed on `2026-01-08T12:00:00`), Feast picked `conv_rate=0.93` (from batch 2, dated `2026-01-08T00:00:00`). This is the point-in-time join doing its job: a row observed at noon on `2026-01-08` is allowed to see the batch 2 snapshot from midnight of the same day, but not the batch 3 snapshot from `2026-01-15`.
 - The training DataFrame is ready to feed directly into a model (`fit(training_df.drop(columns=["label_accepted_ride"]), training_df["label_accepted_ride"])`).
 
-### Step 18: Compare `materialize-incremental` vs `materialize`
+#### Verify point-in-time correctness
 
-`materialize-incremental` is the right tool for a daily batch job. `materialize <start> <end>` is the right tool when you need to backfill a specific time window. Try the backfill form for the first batch only, just to see what it does:
-
-```bash
-feast materialize 2026-01-01T00:00:00 2026-01-08T00:00:00
-```
-
-Expected output: Feast will write batch 1 values into Redis for that window, overwriting the current state. After this, run the full incremental again to restore the latest snapshot:
-
-```bash
-feast materialize-incremental 2026-01-23T00:00:00
-```
-
-This pair of commands demonstrates the difference: `materialize` lets you backfill a closed window, `materialize-incremental` always brings the online store up to the latest known timestamp.
-
-## Verification
-
-Run through this checklist to confirm the lab is correctly built:
-
-- `pip show feast` returns a non-empty Version (no error).
-- `aws sts get-caller-identity` returns a JSON document with your account ID.
-- `aws s3 ls s3://$FEAST_S3_BUCKET/registry/` shows `registry.db`.
-- `python -c "import redis; r=redis.Redis(host='$REDIS_HOST', port=int('$REDIS_PORT'), password='$REDIS_PASSWORD', username='$REDIS_USERNAME'); print(r.ping())"` returns `True` (or `redis-cli ... ping` returns `PONG`).
-- `feast apply` exits with code 0 and prints "Registered feature view driver_stats".
-- `feast feature-views list` prints `driver_stats`.
-- `ls data/` shows `driver_stats.parquet`, `driver_stats_batch2.parquet`, `driver_stats_batch3.parquet`, `driver_stats_batch4.parquet`, and `entity_df.parquet`.
-- `feast materialize-incremental 2026-01-23T00:00:00` exits 0 and lists 9 drivers.
-- `get_online_features()` for `driver_id=1001` returns `conv_rate=0.90` (the batch 4 value).
-- `get_online_features()` for `driver_id=1009` returns a value (this driver exists only in batch 4).
-- `python train_dataframe.py` prints a training DataFrame with 5 rows and the three feature columns, and a correlation column with `label_accepted_ride`.
-- `feast materialize-incremental 2026-01-23T00:00:00` run a second time prints a "no new data" message.
-
-## Testing
-
-### Test 1: Online store is in sync with the latest batch
-
-```bash
-python - <<'PY'
-from feast import FeatureStore
-fs = FeatureStore(repo_path=".")
-res = fs.get_online_features(
-    features=["driver_stats:conv_rate"],
-    entity_rows=[{"driver_id": 1001}],
-).to_dict()
-print(res)
-PY
-```
-
-Expected: `conv_rate: [0.90]` (the batch 4 value).
-
-### Test 2: Historical features are point-in-time correct
+The same driver gets two different feature values depending on when the label was observed. Run this snippet to confirm Feast never leaks future information into a training row:
 
 ```bash
 python - <<'PY'
@@ -734,7 +766,7 @@ print(df)
 PY
 ```
 
-Expected output:
+**Expected output:**
 
 ```text
    driver_id                event_timestamp  conv_rate
@@ -742,27 +774,36 @@ Expected output:
 1       1001 2026-01-10 12:00:00+00:00        0.85
 ```
 
-The same driver gets two different values depending on when the label was observed. The `2026-01-10T12:00:00` row is allowed to see the batch 2 snapshot (`2026-01-08T00:00:00`, value `0.85`) but NOT the batch 3 snapshot (`2026-01-15T00:00:00`, value `0.88`), because that batch is in the future. This is point-in-time correctness: training data never contains future information.
+The `2026-01-10T12:00:00` row is allowed to see the batch 2 snapshot (`2026-01-08T00:00:00`, value `0.85`) but NOT the batch 3 snapshot (`2026-01-15T00:00:00`, value `0.88`), because that batch is in the future. This is point-in-time correctness: training data never contains future information.
 
-### Test 3: Re-materialize is a no-op
+### Step 18: Compare `materialize-incremental` vs `materialize`
+
+> Note: this step demonstrates the difference between a windowed backfill (`materialize`) and the catch-up incremental (`materialize-incremental`).
+
+`materialize-incremental` is the right tool for a daily batch job. `materialize <start> <end>` is the right tool when you need to backfill a specific time window. Try the backfill form for the first batch only, just to see what it does:
+
+```bash
+feast materialize 2026-01-01T00:00:00 2026-01-08T00:00:00
+```
+
+Expected output: Feast will write batch 1 values into Redis for that window, overwriting the current state. After this, run the full incremental again to restore the latest snapshot:
 
 ```bash
 feast materialize-incremental 2026-01-23T00:00:00
-feast materialize-incremental 2026-01-23T00:00:00
 ```
 
-Expected: the first run reports rows written, the second run reports no new data.
+This pair of commands demonstrates the difference: `materialize` lets you backfill a closed window, `materialize-incremental` always brings the online store up to the latest known timestamp.
 
 ## Troubleshooting
 
 **Error: `NoSuchBucket` when running `feast apply` or `materialize-incremental`.**
-The bucket name in `feature_store.yaml` does not match an actual bucket. Re-check Step 5 and copy the exact name. You can also re-export the correct name into `FEAST_S3_BUCKET` and re-edit `feature_store.yaml` by re-running the heredoc from Step 8 with the right env var.
+The bucket name in `feature_store.yaml` does not match an actual bucket. Re-check Step 5 and copy the exact name. You can also re-export the correct name into `FEAST_S3_BUCKET` and edit `feature_store.yaml` in the Explorer to update the `registry:` line.
 
 **Error: `AccessDenied` on S3 writes.**
 The Poridhi session credentials have expired or do not have permission to write to the bucket. Re-generate a credential from the lab UI and re-export `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, plus `AWS_SESSION_TOKEN` if Poridhi issued one. Verify with `aws sts get-caller-identity`.
 
 **Error: `redis.exceptions.ConnectionError` or `WRONGPASS`.**
-The Poridhi managed Redis is unreachable or the credentials in `feature_store.yaml` are wrong. Re-open the Cloud Tray → Database → Redis panel, copy the **Username**, **Password**, **IP Address**, and **Port** again, and re-export the `REDIS_*` env vars. Then re-run the heredoc from Step 8 so the new values flow into `feature_store.yaml`. Test with the Python ping snippet in Step 6.
+The Poridhi managed Redis is unreachable or the credentials in `feature_store.yaml` are wrong. Re-open the Cloud Tray → Database → Redis panel, copy the **Username**, **Password**, **IP Address**, and **Port** again, and re-export the `REDIS_*` env vars. Then edit `feature_store.yaml` in the Explorer to update the `connection_string` line. Test with the Python ping snippet in Step 6.
 
 **Error: `AuthenticationError: WRONGPASS` or `Redis auth failed` when Feast connects.**
 The auth fields are missing from the `connection_string`. Modern Feast requires the username and password to be embedded in the connection string itself, not as separate `user:` / `password:` keys. Make sure the `online_store` block in `feature_store.yaml` looks like:
@@ -770,7 +811,7 @@ The auth fields are missing from the `connection_string`. Modern Feast requires 
 ```yaml
 online_store:
   type: redis
-  connection_string: $REDIS_HOST:$REDIS_PORT,username=$REDIS_USERNAME,password=$REDIS_PASSWORD
+  connection_string: your-redis-host:your-redis-port,username=your-redis-username,password=your-redis-password
 ```
 
 If you see `Extra inputs are not permitted` for `user` or `password`, you are on the old format: delete those top-level keys and put the credentials inside `connection_string` only.
@@ -817,7 +858,7 @@ driver_stats_fv = FeatureView(
 The folder you are in does not match the `project` field in `feature_store.yaml`. Either `cd ~/code/feast-lab/feature_repo` first, or align the `project:` line in `feature_store.yaml` with your current directory. The folder name and the `project` field do not have to match, but if Feast finds a different value in the registry on S3 than in your local `feature_store.yaml`, you must re-run `feast apply` to overwrite the registry.
 
 **Error: `KeyError: 'entity_key_serialization_version'` or `KeyError: 'name'`.**
-The YAML heredoc did not expand the env vars. Most often the heredoc is quoted (`<<'EOF'`) so bash leaves `$FEAST_S3_BUCKET` literally in the file, and Feast then sees a key like `s3://$FEAST_S3_BUCKET/registry/...`. Re-run the heredoc with the unquoted `<<EOF` form, or hard-code the bucket name in the `registry:` line.
+The `feature_store.yaml` still contains a placeholder (`your-unique-bucket-name`, `your-redis-host`, etc.) instead of the real bucket name from Step 5 and the Redis credentials from Step 6, or the bucket name is misspelled. Open the file in the Explorer, replace the placeholders with the values you wrote down, and re-run `feast apply`.
 
 **Error: `int() can't convert non-string with explicit base` when running the Python ping.**
 A shell variable is empty. Re-export `REDIS_PORT` and `REDIS_USERNAME` from the Cloud Tray panel and try again. If you see `port=int('$REDIS_PORT')` and the variable is empty, bash will pass the empty string to `int('')`, which raises that error.
@@ -852,93 +893,14 @@ The `event_timestamp` column in `entity_df` is naive (no timezone) or in the wro
 **Error: training script prints `AttributeError: 'NoneType' object has no attribute 'to_df'`.**
 You forgot the parenthesis: it is `get_historical_features(...)` (a method call), not `get_historical_features` (a reference). Add the parentheses.
 
-## Cleanup
-
-This lab is fully driven by the Poridhi managed Redis and an S3 bucket you created. There is no always-on EC2 instance, so there is no continuous billing beyond standard S3 storage.
-
-1. **Delete the Parquet data on S3 (optional).** If you do not need the offline data for other labs:
-   ```bash
-   aws s3 rm s3://$FEAST_S3_BUCKET/data/ --recursive
-   ```
-2. **Empty and delete the S3 bucket (optional, end-to-end teardown).** This wipes the registry and the offline data:
-   ```bash
-   aws s3 rm s3://$FEAST_S3_BUCKET --recursive
-   aws s3 rb s3://$FEAST_S3_BUCKET
-   ```
-3. **Leave the managed Redis alone.** The Poridhi managed Redis is provided by the lab environment; do not stop it. To avoid leaving your feature values lying around, you can clear the driver keys the lab wrote:
-   ```bash
-   python - <<'PY'
-   import redis
-   r = redis.Redis(
-       host="$REDIS_HOST",
-       port=int("$REDIS_PORT"),
-       password="$REDIS_PASSWORD",
-       username="$REDIS_USERNAME",
-   )
-   # Best-effort delete of every key this lab wrote
-   for pattern in ("*driver_id*", "driver_stats*", "feast*"):
-       for key in r.scan_iter(match=pattern):
-           r.delete(key)
-   print("Cleanup done")
-   PY
-   ```
-4. **Deactivate the virtual environment (optional).**
-   ```bash
-   deactivate
-   ```
-5. **Clear exported env vars (optional).**
-   ```bash
-   unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION
-   unset REDIS_HOST REDIS_PORT REDIS_USERNAME REDIS_PASSWORD
-   unset FEAST_S3_BUCKET
-   ```
-
-The Feast project files on the VM (under `~/code/feast-lab/feature_repo`) are useful for future labs in the Feature Store series (7.4 through 7.8). Leave them in place unless you want a clean slate.
-
 ## Epilogue
 
 You now have a complete batch ingestion loop running on the Poridhi lab VM. Four Parquet batches were generated to simulate daily ETL landings, and `feast materialize-incremental` pushed the freshest values into the Poridhi managed Redis. The same `get_online_features()` call returns the latest data, and `get_historical_features()` produces a point-in-time-correct training DataFrame for any labeled entity set. This is the production pattern: a scheduled job drops new data into the offline store, a materialize job syncs the online store, training and inference both read from Feast, and the two paths can never disagree.
 
 In the next lab (7.4: Streaming Ingestion), you will switch from batch to streaming. Instead of a daily cron, you will use `feast.push()` to push features directly to the online store as events arrive, and verify they appear in Redis within milliseconds. The same feature view and the same `get_online_features()` call from this lab will keep working: the only thing that changes is how the online store gets populated.
 
-## Principles
+The lab VM itself is destroyed between sessions, so the S3 bucket, the virtual environment, and the project files are not torn down explicitly: they go away with the VM. The managed Redis is left running and is reused by the next lab session that needs it.
 
-- **One definition, two access paths:** `materialize-incremental` populates the online store from the offline store, and `get_historical_features` reads the offline store directly. Both use the same `FeatureView`, so training and serving cannot drift.
-- **Point-in-time correctness:** the `event_timestamp` column on every feature row, combined with the `event_timestamp` in `entity_df`, lets Feast perform a temporal join that never leaks future information into a training row.
-- **Incremental over full reloads:** `materialize-incremental` only writes rows newer than the last successful run, which makes it cheap enough to run on a daily schedule.
-- **Idempotency:** re-running `materialize-incremental` with the same end timestamp is a no-op, so the materialize job is safe to retry on transient failures.
-- **Decouple source from transport:** the `FileSource` glob (`data/driver_stats*.parquet`) means new batches can land without changing the feature definition. The transport (cron, Airflow, Step Functions) is independent of the schema.
-- **Self-contained labs:** every lab in this series repeats the full setup so a reader can join mid-way or restart from a clean VM without depending on prior steps.
-- **Treat managed services as the source of truth:** the Poridhi managed Redis is the lab's online store. Do not start a local Redis container alongside it; that would create two sources of truth.
-
-## What You Learned
-
-- How to set up a complete Feast project on the Poridhi lab VM: virtual environment, `feature_store.yaml`, S3 offline store, managed Redis online store, and an `Entity` plus `FeatureView` with a `FileSource` glob.
-- How to generate multiple Parquet batches and how the `FileSource` glob picks them up automatically.
-- How to run `feast materialize-incremental <end_ts>` to push fresh data from the offline store into the online store.
-- How to verify the online store with `get_online_features()` and confirm a value changed after a new batch landed.
-- How to build a labeled `entity_df` in Pandas that represents a training set.
-- How to call `get_historical_features()` to produce a point-in-time-correct training DataFrame.
-- The difference between `materialize <start> <end>` (windowed backfill) and `materialize-incremental <end_ts>` (catch-up from the last run).
-- How idempotency makes materialize jobs safe to retry.
-
-## Next Steps
-
-- Add a new feature to `driver_repo.py` (for example, `rating`), regenerate the Parquet files with the new column, re-run `feast apply`, re-run `materialize-incremental`, and rebuild the training DataFrame.
-- Schedule `feast materialize-incremental` with `cron` on the lab VM so it runs every five minutes against a synthetic batch loop.
-- Replace the `FileSource` with a `RedshiftSource` or `SnowflakeSource` and re-run the same materialize workflow against a real warehouse.
-- Add a second feature view (for example, `driver_trips_hourly`) and test that the materialize job processes both views in one call.
-- Use the `train_dataframe.py` script as a starting point and fit a real model (logistic regression, gradient boosting) on the resulting DataFrame.
-
-## Additional Resources
-
-- Feast documentation: https://docs.feast.dev/
-- Feast `materialize-incremental` reference: https://docs.feast.dev/reference/feature-store-cli/materialize-incremental
-- Feast `get_historical_features` reference: https://docs.feast.dev/getting-started/architecture-and-components/historical-retrieval
-- Feast `FileSource` reference: https://docs.feast.dev/reference/data-sources/file
-- Feast point-in-time correctness: https://docs.feast.dev/getting-started/architecture-and-components/point-in-time-joins
-- Poridhi Cloud Playground documentation: https://poridhi.io/docs
-- Pandas `to_parquet` reference: https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.to_parquet.html
 
 ## Conclusion
 
