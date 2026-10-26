@@ -1,0 +1,9 @@
+project: feast_lab
+registry: s3://feast-offline-store-1792814057/registry/registry.db
+provider: aws
+offline_store:
+  type: file
+online_store:
+  type: redis
+  connection_string: 100.80.60.245:6379,username=redis,password=PASTE_YOUR_REDIS_PASSWORD_HERE
+entity_key_serialization_version: 3

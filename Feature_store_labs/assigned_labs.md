@@ -1,4 +1,4 @@
-![alt text](images/image.png)
+![Feast Feature Store Architecture diagram showing the Feast project structure, S3 bucket, Redis online store, and the flow from feature serving to training dataframes](images/image.png)
 
 # ◆ MODULE 7: Feature Stores
 
@@ -17,7 +17,7 @@
   Type: Standalone
   Key Focus: Install Feast, configure a feature_store.yaml with S3
     (offline) + Redis (online), and apply a feature definition.
-  Lab Status: Pending
+  Lab Status: Completed
   ────────────────────────────────────────
   Lab #: 7.3
   Title: Batch Feature Ingestion
