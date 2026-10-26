@@ -16,14 +16,14 @@
         <mxCell id="frame" parent="1" style="rounded=1;arcSize=1;fillColor=none;strokeColor=#7C8BA1;strokeWidth=6;" value="" vertex="1">
           <mxGeometry height="1020" width="2300" x="30" y="30" as="geometry" />
         </mxCell>
-        <mxCell id="c2" parent="1" style="text;html=1;whiteSpace=wrap;fillColor=none;strokeColor=none;align=center;verticalAlign=bottom;fontColor=#475569;fontSize=20;fontFamily=Helvetica;spacing=0;" value="&lt;b&gt;&lt;font style=&quot;font-size: 23px;&quot;&gt;Service: feature-lab-client&lt;/font&gt;&lt;/b&gt;" vertex="1">
-          <mxGeometry height="34" width="330" x="175" y="260" as="geometry" />
+        <mxCell id="c2" parent="1" style="text;html=1;whiteSpace=wrap;fillColor=none;strokeColor=none;align=center;verticalAlign=bottom;fontColor=#475569;fontSize=20;fontFamily=Helvetica;spacing=0;" value="&lt;b&gt;&lt;font style=&quot;font-size: 27px;&quot;&gt;Service: feature-lab-client&lt;/font&gt;&lt;/b&gt;" vertex="1">
+          <mxGeometry height="34" width="387" x="115" y="239" as="geometry" />
         </mxCell>
-        <mxCell id="c4" parent="1" style="text;html=1;whiteSpace=wrap;fillColor=none;strokeColor=none;align=center;verticalAlign=bottom;fontColor=light-dark(#475569,#33001A);fontSize=20;fontFamily=Helvetica;spacing=0;" value="&lt;font style=&quot;font-size: 25px;&quot;&gt;&lt;b&gt;Port: 6379&lt;br&gt;Keys: entity_id → latest&lt;br&gt;feature snapshot&lt;/b&gt;&lt;/font&gt;" vertex="1">
-          <mxGeometry height="90" width="406" x="1820" y="478" as="geometry" />
+        <mxCell id="c4" parent="1" style="text;html=1;whiteSpace=wrap;fillColor=none;strokeColor=light-dark(transparent,#33001A);align=center;verticalAlign=bottom;fontColor=light-dark(#475569,#33001A);fontSize=20;fontFamily=Helvetica;spacing=0;strokeWidth=0;" value="&lt;font style=&quot;font-size: 25px;&quot;&gt;&lt;b&gt;Port: 6379&lt;br&gt;Keys: entity_id → latest&lt;br&gt;feature snapshot&lt;/b&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100" width="406" x="1820" y="468" as="geometry" />
         </mxCell>
-        <mxCell id="c3" parent="1" style="text;html=1;whiteSpace=wrap;fillColor=none;strokeColor=none;align=center;verticalAlign=bottom;fontColor=light-dark(#475569,#33001A);fontSize=20;fontFamily=Helvetica;spacing=0;" value="&lt;font style=&quot;font-size: 25px;&quot;&gt;&lt;b&gt;Port: 5432&lt;br&gt;Tables: feature_definitions,&lt;br&gt;feature_values, entity_registry&lt;/b&gt;&lt;/font&gt;" vertex="1">
-          <mxGeometry height="79" width="409" x="991" y="461" as="geometry" />
+        <mxCell id="c3" parent="1" style="text;html=1;whiteSpace=wrap;fillColor=none;strokeColor=light-dark(transparent,#33001A);align=center;verticalAlign=bottom;fontColor=light-dark(#475569,#33001A);fontSize=20;fontFamily=Helvetica;spacing=0;strokeWidth=0;" value="&lt;font style=&quot;font-size: 25px;&quot;&gt;&lt;b&gt;Port: 5432&lt;br&gt;Tables: feature_definitions,&lt;br&gt;feature_values, entity_registry&lt;/b&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100" width="414" x="986" y="440" as="geometry" />
         </mxCell>
         <mxCell id="client" parent="1" style="rounded=1;arcSize=8;fillColor=#E8EDFA;strokeColor=#2F4AA6;strokeWidth=2;fontColor=#1F2937;verticalAlign=top;spacingTop=88;spacingLeft=24;spacingRight=24;fontSize=22;fontFamily=Helvetica;whiteSpace=wrap;html=1;" value="&lt;font style=&quot;font-size:32px&quot;&gt;&lt;b&gt;Python Client&lt;/b&gt;&lt;/font&gt;&lt;br&gt;(whiteboard driver)&lt;br&gt;psycopg2 + redis-py" vertex="1">
           <mxGeometry height="250" width="460" x="110" y="300" as="geometry" />

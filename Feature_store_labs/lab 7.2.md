@@ -6,7 +6,7 @@ In production ML systems, training and inference often compute the same features
 
 In this lab, you will install Feast on the Poridhi lab VM, wire it to S3 (offline) and the Poridhi managed Redis (online), define a `driver_stats` feature view, and run `feast apply` to register it. By the end you will have a working feature store ready to feed both training jobs and inference services.
 
-![Feast architecture diagram](animation/7.2_main_feast_architecture.svg)
+![Feast architecture diagram](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/animation/7.2_main_feast_architecture.svg)
 
 
 ## Learning Objectives
@@ -30,6 +30,7 @@ The lab creates the following folders and files on the Poridhi Lab VM. Every `mk
 ├── feature_repo/
 │   ├── feature_store.yaml
 │   ├── driver_repo.py
+│   ├── generate_parquet.py
 │   └── data/
 │       └── driver_stats.parquet
 └── venv/
@@ -42,7 +43,7 @@ The lab creates the following folders and files on the Poridhi Lab VM. Every `mk
 - **Storage:** Managed AWS S3 bucket in `ap-southeast-1`, created with `aws s3api create-bucket` in Step 5. Credentials are short-lived and come from the Poridhi Cloud Playground lab UI. The bucket is destroyed with the lab session and is not torn down explicitly.
 - **Cloud Tray: Redis (managed, already running):** Open the Cloud Tray in the Poridhi lab UI, click **Database**, then click the **Redis** card. The panel shows the actual credentials for this lab session: **Username**, **Password**, **IP Address**, **Port**, and a copy-able **Connection String**. The values can change between lab runs, so always read them from the panel instead of hard-coding them. You will use these in Step 6 and in the `feature_store.yaml` in Step 8.
 - **AWS credentials:** Generate a credential from the Poridhi Cloud Playground lab UI (Generate credential button). Region is `ap-southeast-1` (Singapore). The SessionToken field may or may not appear: treat it as optional.
-- **Tools already on the VM:** `python3` (3.9+), `pip`, `aws` CLI. The `redis` Python client is installed in Step 3 if missing. `redis-cli` is also NOT pre-installed; use the Python fallback in Step 6. The lab never invokes `vim`, `nano`, `cat`, `tee`, `xdg-open`, or any shell-level write to create files.
+- **Tools already on the VM:** `python3` (3.9+), `pip`, `aws` CLI. The `redis` Python client is installed in Step 3 if missing. `redis-cli` may or may not be pre-installed, so Step 6 uses the Python client as the primary check and shows the `redis-cli` route as an optional alternative. The lab never invokes `vim`, `nano`, `cat`, `tee`, `xdg-open`, or any shell-level write to create files.
 
 ## Prologue
 
@@ -70,7 +71,7 @@ Before you start, collect two sets of credentials from the Poridhi lab UI. You w
 3. Click the **Redis** card. The panel shows the **Username**, **Password**, **IP Address**, **Port**, and **Connection String** for the current lab session.
 4. Copy the **Username**, **Password**, **IP Address**, and **Port** values.
 
-![Cloud Tray Redis credentials](images/7.1_cloudtray_redis_credentials.png)
+![Cloud Tray Redis credentials](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_cloudtray_redis_credentials.png)
 
 This is what the panel looks like: the **Database Servers** view lists MongoDB, Redis, and PostgreSQL, and the Redis card below it expands into the credential block. The **Redis** card must show a green **Running** badge, and the **Connection String** line gives you everything in one copy-able string, for example `redis://redis:••••••@100.80.60.245:6379`. The password is masked in the panel, so use the copy button rather than trying to read it.
 
@@ -122,10 +123,6 @@ After this one-time setup, every later step that creates a file just tells you t
 Install Feast plus the AWS and Redis extras. This pulls in `boto3`, `redis`, and the S3 file source plugin:
 
 ```bash
-pip install --upgrade pip
-```
-
-```bash
 pip install "numpy>=2.0,<3" "pandas>=2" "pyarrow>=14" "feast[aws,redis]"
 ```
 
@@ -138,7 +135,7 @@ feast version
 feast --help
 ```
 
-![feast version and help](images/7.2_feast_version_and_help.png)
+![feast version and help](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_feast_version_and_help.png)
 
 The first line is the SDK version (`Feast SDK Version: "0.67.0"` on a current install; `0.36.x` and later are all fine for this lab). Below it, `feast --help` prints the usage line and the full list of subcommands: `apply`, `materialize`, `materialize-incremental`, `entities`, `feature-views`, `feature-services`, `get-online-features`, `teardown`, and more. You should see that list without any import errors.
 
@@ -181,7 +178,7 @@ Verify that the credentials work:
 aws sts get-caller-identity
 ```
 
-![aws caller identity output](images/7.2_aws_sts_caller_identity.png)
+![aws caller identity output](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_aws_sts_caller_identity.png)
 
 The output is a JSON document with three fields: `UserId`, `Account` (your AWS account ID), and `Arn`. The `Arn` reads `arn:aws:iam::949675286521:user/pxg6-poridhi`, which is the temporary IAM identity the Poridhi Cloud Playground issued for this session. Seeing that `Arn` back is what confirms the credentials reached the AWS API.
 
@@ -194,15 +191,15 @@ The output is a JSON document with three fields: `UserId`, `Account` (your AWS a
 Pick a globally unique bucket name and create it in `ap-southeast-1`:
 
 ```bash
-export BUCKET_NAME="feast-offline-store-$(date +%s)"
-echo "Bucket name: $BUCKET_NAME"
+export FEAST_S3_BUCKET="feast-offline-store-$(date +%s)"
+echo "Bucket name: $FEAST_S3_BUCKET"
 aws s3api create-bucket \
-  --bucket "$BUCKET_NAME" \
+  --bucket "$FEAST_S3_BUCKET" \
   --region ap-southeast-1 \
   --create-bucket-configuration LocationConstraint=ap-southeast-1
 ```
 
-![s3 bucket created](images/7.2_create_bucket_output.png)
+![s3 bucket created](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_create_bucket_output.png)
 
 The command echoes the generated bucket name and then returns a JSON document with two fields: `Location` (the bucket's S3 endpoint) and `BucketArn` (its ARN). Seeing `BucketArn` back means the bucket was created successfully.
 
@@ -211,18 +208,18 @@ The command echoes the generated bucket name and then returns a JSON document wi
 Confirm it exists:
 
 ```bash
-aws s3 ls | grep "$BUCKET_NAME"
+aws s3 ls | grep "$FEAST_S3_BUCKET"
 ```
 
-![s3 bucket listing](images/7.2_s3_ls_bucket_listed.png)
+![s3 bucket listing](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_s3_ls_bucket_listed.png)
 
 The listing shows one line with the bucket's creation timestamp and name. If the grep returns nothing, the bucket was not created, so go back and re-run the `create-bucket` command.
 
-Persist the bucket name for later steps:
+Persist the bucket name for later steps, so a fresh terminal still has it:
 
 ```bash
-echo "export FEAST_S3_BUCKET=$BUCKET_NAME" >> ~/.bashrc
-export FEAST_S3_BUCKET=$BUCKET_NAME
+echo "export FEAST_S3_BUCKET=$FEAST_S3_BUCKET" >> ~/.bashrc
+export FEAST_S3_BUCKET=$FEAST_S3_BUCKET
 ```
 
 > **Write down your bucket name now.** Run `echo "$FEAST_S3_BUCKET"` in the same terminal and copy the output: it will look like `feast-offline-store-1792384265` (your value will differ). You will paste that exact value into `feature_store.yaml` in Step 8 (replacing the `your-unique-bucket-name` placeholder). The `$FEAST_S3_BUCKET` env var is also fine to keep using; just remember the value in case you start a new terminal session before Step 8 and the env var is no longer set. If you lose it, run `echo "$FEAST_S3_BUCKET"` again in the same terminal where you exported it. (The bucket itself persists in S3; only the local shell variable needs restoring.)
@@ -242,13 +239,13 @@ export REDIS_PASSWORD="<paste-password-from-cloud-tray>"
 
 The panel gives you all four values in the **CREDENTIALS** block, and the **Connection String** at the bottom carries them in one string. The **IP Address** becomes `REDIS_HOST`, the **Port** becomes `REDIS_PORT`, and the masked **Username** and **Password** become `REDIS_USERNAME` and `REDIS_PASSWORD`. Use the copy button on each field: the password is never shown in plain text in the panel.
 
-The Poridhi lab VM does not have `redis-cli` pre-installed by default, so use the Python client (which Feast already depends on) to ping the Redis:
+The `redis-cli` binary is not guaranteed to be on the Poridhi lab VM, so use the Python client (which Feast already depends on) to ping the Redis:
 
 ```bash
 python -c "import redis; r=redis.Redis(host='$REDIS_HOST', port=int('$REDIS_PORT'), password='$REDIS_PASSWORD', username='$REDIS_USERNAME'); print(r.ping())"
 ```
 
-![redis ping returns True](images/7.2_redis_python_ping_true.png)
+![redis ping returns True](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_redis_python_ping_true.png)
 
 The output is `True`, which means the managed Redis accepted the connection and the credentials. If you see `ModuleNotFoundError: No module named 'redis'`, install it first:
 
@@ -263,7 +260,7 @@ sudo apt-get update && sudo apt-get install -y redis-tools
 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user "$REDIS_USERNAME" -a "$REDIS_PASSWORD" ping
 ```
 
-![redis-cli ping returns PONG](images/7.2_redis_cli_pong.png)
+![redis-cli ping returns PONG](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_redis_cli_pong.png)
 
 The output is `PONG`. The `Warning: Using a password with '-a' or '-u' option on the command line interface may not be safe.` line above it is harmless: the password is only exposed in your own terminal history. The lab works either way; pick one and continue.
 
@@ -279,11 +276,10 @@ Skip the scaffold and create the project folder by hand. This one command create
 
 ```bash
 mkdir -p ~/poridhi-lab-7-2/feature_repo/data
-```
-
-```bash
 cd ~/poridhi-lab-7-2/feature_repo
 ```
+
+![VS Code Explorer showing project folder](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_vscode_explorer_project.png)
 
 The VS Code Explorer on the left is rooted at `PORIDHI-LAB-7-2` and lists two folders: `feature_repo` and `venv`. Both are collapsed, so expand `feature_repo` to see the `data` subfolder inside it. You should now be in `~/poridhi-lab-7-2/feature_repo` in the terminal as well. Steps 8 through 10 all write into this folder, so keep this terminal open and stay in this directory for the rest of the lab.
 
@@ -295,33 +291,24 @@ The VS Code Explorer on the left is rooted at `PORIDHI-LAB-7-2` and lists two fo
 
 This file has two long values, and a long value pasted into a text editor is where labs like this one usually break. The editor soft-wraps the line, the wrap gets copied along with the text, and the file ends up with a value split across two lines. The YAML parser then rejects it with a `ScannerError`.
 
-So write this file from the terminal instead, where the bytes are exact. Your terminal is already inside `~/poridhi-lab-7-2/feature_repo` from Step 7.
+So paste the YAML below into the editor rather than typing it by hand. Right-click the `feature_repo` folder in the VS Code Explorer (rooted at `PORIDHI-LAB-7-2` from Step 2.1), choose `New File…`, name the file `feature_store.yaml`, paste the contents, and save.
 
-Before you run the command, put your own values into it:
+Before you paste, put your own values into the YAML:
 
 - `your-unique-bucket-name` becomes the bucket name from Step 5, the one you wrote down with `echo "$FEAST_S3_BUCKET"`. If you lost it, run `echo "$FEAST_S3_BUCKET"` in the terminal and use that value.
 - `your-redis-host` and `your-redis-port` become the IP Address and Port from the Cloud Tray Redis panel in Step 6.
 - `your-redis-username` and `your-redis-password` become the Username and Password from the same panel.
 
-Then run this in the terminal:
-
-```bash
-python - <<'PY'
-from pathlib import Path
-
-Path("feature_store.yaml").write_text(
-    "project: feast_lab\n"
-    "registry: s3://your-unique-bucket-name/registry/registry.db\n"
-    "provider: aws\n"
-    "offline_store:\n"
-    "  type: file\n"
-    "online_store:\n"
-    "  type: redis\n"
-    "  connection_string: your-redis-host:your-redis-port,username=your-redis-username,password=your-redis-password\n"
-    "entity_key_serialization_version: 3\n"
-)
-print("wrote feature_store.yaml")
-PY
+```yaml
+project: feast_lab
+registry: s3://your-unique-bucket-name/registry/registry.db
+provider: aws
+offline_store:
+  type: file
+online_store:
+  type: redis
+  connection_string: your-redis-host:your-redis-port,username=your-redis-username,password=your-redis-password
+entity_key_serialization_version: 3
 ```
 
 **Important: the connection string is not the `redis://` URL from the Cloud Tray panel.** The panel shows something like `redis://redis:YOUR-PASSWORD@100.80.60.245:6379`, and Feast cannot read that form. It splits the value on `:` and tries to parse the second piece as a port number, which fails with `ValueError: invalid literal for int() with base 10: '//redis'`.
@@ -333,12 +320,12 @@ Feast wants the endpoint and the credentials as two separate parts of one value:
 | Cloud Tray panel | `redis://redis:YOUR-PASSWORD@100.80.60.245:6379` |
 | What Feast wants | `100.80.60.245:6379,username=redis,password=YOUR-PASSWORD` |
 
-Drop the `redis://` prefix, drop the quotes, and replace the `user:password@` section with `,username=...,password=...`. The command above already has the correct shape; you only substitute the four real values.
+Drop the `redis://` prefix, drop the quotes, and replace the `user:password@` section with `,username=...,password=...`. The YAML above already has the correct shape; you only substitute the four real values.
 
 Now confirm the file is exactly right before you go on. This prints every line with a `$` marker at the end, and shows tabs as `^I`:
 
 ```bash
-cat -A feature_store.yaml
+python3 -c "print(''.join(l.replace(chr(9), '^I').rstrip(chr(10)) + '$' + chr(10) for l in open('feature_store.yaml')), end='')"
 ```
 
 You want to see **9 lines**, each ending in a single `$`:
@@ -367,63 +354,56 @@ Notes about this file:
 - `connection_string: host:port,username=...,password=...`: the Poridhi managed Redis endpoint and credentials. The auth fields must be embedded in the connection string itself, not written as separate top-level `user:` or `password:` keys, and not written as a `redis://` URL.
 - `entity_key_serialization_version: 3`: the modern serialization for Redis keys. Required by recent Feast versions.
 
-> Would I get an error if I ran this? Possibly: `Extra inputs are not permitted` if you accidentally paste `user: your-redis-username` and `password: your-redis-password` as separate top-level keys, or if you leave a `region:` key under `offline_store`. Modern Feast requires the Redis credentials to be embedded in `connection_string` only, and it rejects the `region` key for the file offline store. Delete those keys and re-run `feast apply`. A YAML `ScannerError: while scanning a simple key` means a value was split across two lines, which the `cat -A` check above catches. A `ValueError: invalid literal for int() with base 10: '//redis'` at materialization time means the `redis://` URL form was used instead of `host:port,username=...,password=...`.
+> Would I get an error if I ran this? Possibly: `Extra inputs are not permitted` if you accidentally paste `user: your-redis-username` and `password: your-redis-password` as separate top-level keys, or if you leave a `region:` key under `offline_store`. Modern Feast requires the Redis credentials to be embedded in `connection_string` only, and it rejects the `region` key for the file offline store. Delete those keys and re-run `feast apply`. A YAML `ScannerError: while scanning a simple key` means a value was split across two lines, which the line-marker check above catches. A `ValueError: invalid literal for int() with base 10: '//redis'` at materialization time means the `redis://` URL form was used instead of `host:port,username=...,password=...`.
 
 ### Step 9: Create `driver_repo.py`
 
 > Note: this step writes `driver_repo.py` (the feature definition for `driver_id`) in `~/poridhi-lab-7-2/feature_repo`.
 
-Write this file the same way you wrote `feature_store.yaml`: from the terminal, so the indentation is exactly right. Your terminal is already inside `~/poridhi-lab-7-2/feature_repo`.
+Write this file the same way you wrote `feature_store.yaml`: paste it into the editor, so the indentation is exactly right. Right-click the `feature_repo` folder in the VS Code Explorer, choose `New File…`, name the file `driver_repo.py`, paste the Python below, and save.
 
-```bash
-python - <<'PY'
-from pathlib import Path
+```python
+"""Feature definitions for the driver_stats feature view."""
+from datetime import timedelta
 
-Path("driver_repo.py").write_text(
-    '"""Feature definitions for the driver_stats feature view."""\n'
-    "from datetime import timedelta\n"
-    "\n"
-    "from feast import Entity, FeatureView, Field, FileSource, ValueType\n"
-    "from feast.types import Float64, Int64\n"
-    "\n"
-    "# Source: a Parquet file we'll generate in the next step\n"
-    "driver_stats_source = FileSource(\n"
-    '    name="driver_stats_source",\n'
-    '    path="data/driver_stats.parquet",\n'
-    '    timestamp_field="event_timestamp",\n'
-    '    created_timestamp_column="created",\n'
-    ")\n"
-    "\n"
-    "# Entity: the thing we want to look up features for\n"
-    "driver = Entity(\n"
-    '    name="driver_id",\n'
-    '    join_keys=["driver_id"],\n'
-    '    description="Driver identifier",\n'
-    "    value_type=ValueType.INT64,\n"
-    ")\n"
-    "\n"
-    "# FeatureView: a logical group of features tied to the entity\n"
-    "driver_stats_fv = FeatureView(\n"
-    '    name="driver_stats",\n'
-    "    entities=[driver],\n"
-    "    ttl=timedelta(days=3650),\n"
-    "    schema=[\n"
-    '        Field(name="conv_rate", dtype=Float64),\n'
-    '        Field(name="acc_rate", dtype=Float64),\n'
-    '        Field(name="avg_daily_trips", dtype=Int64),\n'
-    "    ],\n"
-    "    source=driver_stats_source,\n"
-    "    online=True,\n"
-    ")\n"
+from feast import Entity, FeatureView, Field, FileSource, ValueType
+from feast.types import Float64, Int64
+
+# Source: a Parquet file we'll generate in the next step
+driver_stats_source = FileSource(
+    name="driver_stats_source",
+    path="data/driver_stats.parquet",
+    timestamp_field="event_timestamp",
+    created_timestamp_column="created",
 )
-print("wrote driver_repo.py")
-PY
+
+# Entity: the thing we want to look up features for
+driver = Entity(
+    name="driver_id",
+    join_keys=["driver_id"],
+    description="Driver identifier",
+    value_type=ValueType.INT64,
+)
+
+# FeatureView: a logical group of features tied to the entity
+driver_stats_fv = FeatureView(
+    name="driver_stats",
+    entities=[driver],
+    ttl=timedelta(days=3650),
+    schema=[
+        Field(name="conv_rate", dtype=Float64),
+        Field(name="acc_rate", dtype=Float64),
+        Field(name="avg_daily_trips", dtype=Int64),
+    ],
+    source=driver_stats_source,
+    online=True,
+)
 ```
 
-Confirm it was written and imports cleanly:
+Confirm it was written and imports cleanly. The first command prints the file back so you can check the `ttl=` line by eye, and the second one proves the definitions import without errors:
 
 ```bash
-cat driver_repo.py
+python3 -c "print(open('driver_repo.py').read(), end='')"
 python -c "import driver_repo; print('driver_repo.py imported cleanly')"
 ```
 
@@ -433,16 +413,17 @@ Notes about the file:
 - `entities=[driver]` passes the `Entity` object. The old string form (`entities=["driver_id"]`) is rejected with `Entity 'driver_id' not found` because Feast no longer resolves the name from the registry lookup.
 - `ttl=timedelta(days=3650)` makes the view remember the last ten years of values. **This number matters more than it looks.** The default TTL in Feast is one day, and the Parquet rows this lab generates are dated `2026-01-01`, which is months before the day you run the lab. With the default `timedelta(days=1)` those rows fall outside the window and the materialization in Step 13 writes **zero rows without raising any error at all**. Ten years covers the data with room to spare.
 
-> Would I get an error if I ran this? Possibly: `TypeCheckError: Invalid type INT64 for feature conv_rate` if you kept the old tuple schema, or `Entity 'driver_id' not found` if you passed the entity name as a string. Both are caught at `feast apply` time in Step 11, not here, so if you see them there, come back and check this file against the block above. A wrong TTL does not raise an error: it silently produces an empty materialization in Step 13, so check the `ttl=` line in the output of `cat driver_repo.py` if Step 13 reports no rows.
+> Would I get an error if I ran this? Possibly: `TypeCheckError: Invalid type INT64 for feature conv_rate` if you kept the old tuple schema, or `Entity 'driver_id' not found` if you passed the entity name as a string. Both are caught at `feast apply` time in Step 11, not here, so if you see them there, come back and check this file against the block above. A wrong TTL does not raise an error: it silently produces an empty materialization in Step 13, so check the `ttl=` line in the printed output above if Step 13 reports no rows.
 
 ### Step 10: Generate a small Parquet sample
 
 > Note: this step writes a small Parquet sample (`data/driver_stats.parquet`) that `feast apply` and `feast materialize` will read.
 
-Step 7 already created the `data/` subfolder and your terminal is already inside `feature_repo`, so the relative path `data/driver_stats.parquet` in `driver_repo.py` resolves from here. Run this Python script to create a 5-row Parquet file with the right schema:
+Step 7 already created the `data/` subfolder and your terminal is already inside `feature_repo`, so the relative path `data/driver_stats.parquet` in `driver_repo.py` resolves from here.
 
-```bash
-python - <<'PY'
+Create a new file called `generate_parquet.py` in `~/poridhi-lab-7-2/feature_repo` and paste the Python below into it. Right-click the `feature_repo` folder in the VS Code Explorer, choose `New File…`, name it `generate_parquet.py`, paste, and save.
+
+```python
 import pandas as pd
 from datetime import datetime, timezone
 
@@ -463,12 +444,17 @@ df["acc_rate"] = df["acc_rate"].astype("float64")
 
 df.to_parquet("data/driver_stats.parquet", index=False)
 print("Wrote data/driver_stats.parquet")
-PY
 ```
 
-![parquet generation output](images/7.2_parquet_generation_output.png)
+Run it from the terminal, which is already inside `feature_repo`:
 
-The terminal shows the whole `python - <<'PY'` block echoed at the prompt, including the two `astype("float64")` casts and the `to_parquet` call. The last line is the confirmation you want: `Wrote data/driver_stats.parquet`. Note the prompt path is `~/poridhi-lab-7-2/feature_repo`, which is where the relative path `data/driver_stats.parquet` resolves to the `data/` folder that Step 7 created.
+```bash
+python generate_parquet.py
+```
+
+![parquet generation output](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_parquet_generation_output.png)
+
+The terminal shows the script running and the last line is the confirmation you want: `Wrote data/driver_stats.parquet`. Note the prompt path is `~/poridhi-lab-7-2/feature_repo`, which is where the relative path `data/driver_stats.parquet` resolves to the `data/` folder that Step 7 created.
 
 > Would I get an error if I ran this? Possibly: `ModuleNotFoundError: No module named 'pandas'` or `No module named 'pyarrow'`, which means the virtual environment is not active. Run `source ~/poridhi-lab-7-2/venv/bin/activate` and repeat the command. The explicit `astype("float64")` casts prevent a `Float32 vs Float64 mismatch` during the materialize step in Step 13, because pandas would otherwise infer a narrower float type for those columns.
 
@@ -485,7 +471,7 @@ pwd
 ls
 ```
 
-The output should show `/home/poridhian/poridhi-lab-7-2/feature_repo` and a listing that includes `feature_store.yaml`, `driver_repo.py`, and the `data` folder.
+The output should show `/home/poridhian/poridhi-lab-7-2/feature_repo` and a listing that includes `feature_store.yaml`, `driver_repo.py`, `generate_parquet.py`, and the `data` folder.
 
 Now run `feast apply`. This validates the definitions, uploads the registry to S3, and registers the feature view:
 
@@ -493,7 +479,7 @@ Now run `feast apply`. This validates the definitions, uploads the registry to S
 feast apply
 ```
 
-![feast apply output](images/7.2_feast_apply_output.png)
+![feast apply output](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_feast_apply_output.png)
 
 The output has four lines. `No project found in the repository. Using project name feast_lab defined in feature_store.yaml` is not an error: it means Feast found no `Project` object declared in Python, so it took the project name from your YAML, which is exactly what this lab wants. `INFO:botocore.credentials:Found credentials in environment variables` confirms the AWS credentials from Step 4 reached boto3, so the registry can be written to S3. `Applying changes for project feast_lab` and `Deploying infrastructure for driver_stats` mean the entity and the feature view were registered.
 
@@ -505,7 +491,7 @@ feast feature-views list
 feast feature-services list
 ```
 
-![entities and feature views listed](images/7.2_feast_entities_and_views_listed.png)
+![entities and feature views listed](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_feast_entities_and_views_listed.png)
 
 The entity table shows `driver_id` with the description `Driver identifier` and type `ValueType.INT64`, which matches the `Entity` you defined in Step 9. The feature view table shows `driver_stats` with entities `{'driver_id'}`, type `FeatureView`, and `ENABLED` set to `Yes`. The `FEATURES` column is empty because Feast populates it only for views that declare a schema in the registry listing, and the entity set renders with curly braces because Feast stores it as a set. The feature services list at the end is empty, which is correct: this lab does not define one.
 
@@ -521,7 +507,7 @@ Confirm that Feast wrote the registry file to your bucket:
 aws s3 ls s3://$FEAST_S3_BUCKET/registry/
 ```
 
-![registry.db in S3](images/7.2_registry_db_in_s3.png)
+![registry.db in S3](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_registry_db_in_s3.png)
 
 The listing shows one object, `registry.db`, with its size and the timestamp when Feast wrote it. That file is the single source of truth for your feature definitions: every later command reads the entity and the feature view from it, not from the Python file.
 
@@ -539,7 +525,7 @@ Push the latest rows from the Parquet file into the managed Redis:
 feast materialize-incremental 2026-01-02T00:00:00
 ```
 
-![empty materialization window](images/7.2_materialize_empty_window.png)
+![empty materialization window](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_materialize_empty_window.png)
 
 Feast treats the end timestamp as **exclusive**, so pass a timestamp one day after the batch you want included. The Parquet rows generated in Step 10 are dated `2026-01-01T00:00:00`, which means `2026-01-02T00:00:00` is the earliest end timestamp that includes them.
 
@@ -557,7 +543,7 @@ The first is the TTL in `driver_repo.py`. Feast's default is one day, and the Pa
 grep -n "ttl" driver_repo.py
 ```
 
-![driver_repo.py ttl check](images/7.2_driver_repo_ttl_check.png)
+![driver_repo.py ttl check](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_driver_repo_ttl_check.png)
 
 You want to see `ttl=timedelta(days=3650)`. If it says `timedelta(days=1)`, change it.
 
@@ -585,7 +571,7 @@ print(features)
 PY
 ```
 
-![online features read-back](images/7.2_get_online_features_read_back.png)
+![online features read-back](https://github.com/tajuar-akash-hub/Labs/blob/main/Feature_store_labs/images/7.2_get_online_features_read_back.png)
 
 The printed dictionary is the end-to-end proof of the lab. `driver_id` returns the two entities you asked for. `conv_rate` returns `0.82` for driver 1001 and `0.91` for driver 1003, and `acc_rate` returns `0.95` and `0.99`. Those are exactly the values in the Parquet file from Step 10, which means the path worked: pandas wrote the Parquet file, Feast read it during materialization, the values landed in the managed Redis, and `get_online_features` read them back out of Redis by entity key. An inference service in production would make this same call at request time.
 
