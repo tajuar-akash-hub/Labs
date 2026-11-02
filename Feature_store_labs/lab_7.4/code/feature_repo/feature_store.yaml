@@ -1,0 +1,10 @@
+project: streaming_ingestion
+provider: local
+registry: data/registry.db
+online_store:
+  type: redis
+  redis_type: redis
+  connection_string: "${REDIS_HOST}:${REDIS_PORT},username=${REDIS_USERNAME},password=${REDIS_PASSWORD},db=0"
+offline_store:
+  type: file
+entity_key_serialization_version: 2
