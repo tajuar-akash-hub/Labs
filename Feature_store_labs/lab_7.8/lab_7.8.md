@@ -8,7 +8,6 @@ Online serving is where feature stores earn their keep. A recommendation request
 
 No object storage is needed in this lab. The Feast registry and the offline Parquet file are local files on the VM, and the online store is the managed Redis from the Poridhi Cloud Tray. Local files disappear when the VM is destroyed. The managed Redis keeps running outside the VM, so the materialized features stay there until the lab session ends.
 
-
 ## Learning Objectives
 
 - Define a user entity and a feature view, and register them with `feast apply`.
@@ -137,7 +136,6 @@ Create a new file called `make_data.py` in `~/poridhi-lab-7-8/feature_repo` and 
 import numpy as np
 import pandas as pd
 
-
 def main():
     rng = np.random.default_rng(7)
     user_count = 100
@@ -161,7 +159,6 @@ def main():
     print(users.head())
     print("Wrote data/user_stats.parquet with", len(users), "rows")
 
-
 if __name__ == "__main__":
     main()
 ```
@@ -178,7 +175,9 @@ Your terminal is already inside `~/poridhi-lab-7-8/feature_repo` with the virtua
 python make_data.py
 ```
 
-Expected output: the first five rows of the dataset, followed by `Wrote data/user_stats.parquet with 100 rows`.
+![parquet generation output](assets/7.6_parquet_generation_output.png)
+
+The script prints the first five rows of the generated dataset and confirms the file was written with 100 rows. The `event_timestamp` column carries the timezone-aware UTC timestamp that Feast uses for the point-in-time join.
 
 > Would I get an error if I ran this? Possibly. `OSError` or `No such file or directory: data/user_stats.parquet` means you are not inside `feature_repo`, or the `data/` folder from Step 1 is missing. Move into `feature_repo` and re-run the command.
 
@@ -227,7 +226,9 @@ feast apply
 feast materialize-incremental $(date -u +"%Y-%m-%dT%H:%M:%S")
 ```
 
-Expected output: Feast prints `Created entity user` and `Created feature view user_stats`, then a progress bar for `user_stats` that completes at 100%.
+![feast apply and materialize output](assets/7.8_feast_apply_and_materialize.png)
+
+Feast reports that it found no existing project, then applies the changes for the `fastapi_feast_redis` project and deploys the `user_stats` feature view. The materialization banner confirms the window it wrote into the Redis online store, from the first event timestamp in the Parquet file up to the current time.
 
 > Would I get an error if I ran this? Possibly. `ModuleNotFoundError` means the virtual environment is not active: run `source ~/poridhi-lab-7-8/venv/bin/activate`. `Error 99`, `Connection refused`, or `WRONGPASS` from Redis means the `connection_string` in Step 4 has a wrong value: compare it with the Cloud Tray Redis panel, fix the file, and re-run only the `materialize-incremental` line.
 
@@ -265,7 +266,13 @@ To open the UI from your laptop, print the VM's internal IP:
 hostname -I
 ```
 
-Expected output: a line with several addresses. Use the first one (for example `10.61.14.9`) and ignore `172.17.0.1` and any `100.x` address unless the first one fails.
+![hostname -I output](assets/7.8_hostname_i_output.png)
+
+The first address is the VM's internal IP. The Load Balancer runs outside the VM, so it has to target this address rather than loopback.
+
+![Feast UI dashboard](assets/7.8_feast_ui_dashboard.png)
+
+The Feast UI home page lists the `fastapi_feast_redis` project with one feature view, three features, two entities, and one data source. The sidebar links to the `user` entity, the `user_stats` feature view, and the `user_stats_source` file source that `feast apply` registered.
 
 Open the Poridhi Cloud Tray in the lab UI, click **Load Balancer**, enter that IP in **Enter IP**, enter `8888` in **Enter Port**, and click **Expose**. Open the public URL from the panel in a normal browser tab.
 
@@ -305,7 +312,6 @@ FALLBACK_ITEMS = ["popular-gift-card", "weekly-deals-pack"]
 
 store = None
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global store
@@ -315,20 +321,16 @@ async def lifespan(app: FastAPI):
     ).to_dict()
     yield
 
-
 app = FastAPI(title="Feast recommendation API", lifespan=lifespan)
-
 
 class PredictRequest(BaseModel):
     user_id: int
-
 
 def first_value(result: dict, feature_name: str):
     for key, values in result.items():
         if key == feature_name or key.endswith(f"__{feature_name}"):
             return values[0]
     return None
-
 
 def recommend(features: dict) -> list:
     items = list(CATEGORY_ITEMS.get(features["top_category"], FALLBACK_ITEMS))
@@ -337,7 +339,6 @@ def recommend(features: dict) -> list:
     if features["avg_order_value"] >= 60:
         items.append("premium-pick")
     return items
-
 
 @app.post("/predict")
 def predict(request: PredictRequest):
@@ -387,8 +388,9 @@ Your terminal is already inside `~/poridhi-lab-7-8/feature_repo` with the virtua
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
+![uvicorn server started](assets/7.10_uvicorn_server_started.png)
 
-Expected output: uvicorn prints `Application startup complete.` and `Uvicorn running on http://0.0.0.0:8000`. Leave this terminal running.
+Uvicorn reports the app started and is listening on `http://0.0.0.0:8000`. The requests that follow in the log are the browser fetching the OpenAPI schema and the interactive docs, which is normal once the port is reachable.
 
 > Would I get an error if I ran this? Possibly. `ModuleNotFoundError: No module named 'fastapi'` means the virtual environment is not active or Step 1 did not finish. `Address already in use` means another process holds port 8000: stop it, or change `--port 8000` to another port and use that port in later steps. A Redis error at startup comes from the warm-up lookup and means the `connection_string` in Step 4 is wrong.
 
@@ -426,7 +428,6 @@ WARMUP_REQUESTS = 10
 REQUESTS = 200
 TARGET_MS = 50
 
-
 def main():
     latencies = []
 
@@ -451,7 +452,6 @@ def main():
     print(f"max: {latencies[-1]:.2f} ms")
     print("PASS" if p95 < TARGET_MS else f"FAIL: p95 is above {TARGET_MS} ms")
 
-
 if __name__ == "__main__":
     main()
 ```
@@ -462,7 +462,9 @@ Run it from the second terminal:
 python bench.py
 ```
 
-Expected output: the request count, the p50, p95, and max latencies in milliseconds, and a final `PASS` line when the 95th percentile is under 50 milliseconds.
+![benchmark latency percentiles](assets/7.12_benchmark_latency_percentiles.png)
+
+The benchmark sends 200 requests and reports the percentiles. The 95th percentile comes in well under the 50 millisecond target, so the run ends with a `PASS` line.
 
 > Would I get an error if I ran this? Possibly. `httpx.ConnectError` means the server from Step 10 is not running. A `FAIL` result is a measurement, not an error: the latency depends on the network distance between the VM and the managed Redis. Compare `feast_ms` in the Step 11 responses with `total_ms` to see whether the time goes into the Redis lookup or into the rest of the request.
 
@@ -475,6 +477,10 @@ First, print the VM's internal IP. The Load Balancer runs outside the VM, so it 
 ```bash
 hostname -I
 ```
+
+![load balancer expose port](assets/7.13_load_balancer_expose_port.png)
+
+The Load Balancer panel lists the exposed entries, each with the VM address and port on the left and the public URL on the right. Use the entry for port `8000` when calling the API from outside the VM.
 
 Use the first address printed (ignore `172.17.0.1` and any `100.x` address unless the first one fails). Open the Poridhi Cloud Tray in the lab UI, click **Load Balancer**, enter that IP in **Enter IP**, enter `8000` in **Enter Port**, and click **Expose**. The exposed public URL appears in the panel. Then call the API through it from any machine, replacing the address with the one the panel shows:
 

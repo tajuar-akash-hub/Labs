@@ -1,0 +1,12 @@
+project: fastapi_feast_redis
+provider: local
+registry: data/registry.db
+
+online_store:
+  type: redis
+  connection_string: "100.80.222.189:6379,username=redis,password=redis"
+
+offline_store:
+  type: file
+
+entity_key_serialization_version: 3

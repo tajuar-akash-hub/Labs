@@ -1,0 +1,33 @@
+
+F
+&
+user"user_idJfastapi_feast_redis
+Õ·×è–§’Õ·×è–§’
+J
+*
+__dummy"
+__dummy_idJfastapi_feast_redis
+Õ·×¸ùµ’Õ·×ğìÁ’1"$6b6a2e3c-c195-47b8-8e97-f034e4b39e76*Ü·×È¢èÃ2Î
+“
+
+user_statsfastapi_feast_redisuser"
+	orders_7d"
+avg_order_value"
+top_category2€õ$:•event_timestampZdata/user_stats.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢user_stats_source’Õ·×Ğ¥™ˆ"Õ·×àîÓ‘@b
+user_id’latest6
+Õ·×ğıè‘Ü·×Ğ¼™Ã
+Ü˜’×˜ïÀ’Ö·×0b«event_timestampZdata/user_stats.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢user_stats_sourceªfastapi_feast_redis’Õ·×Ğ¥™ˆ"Õ·×àîÓ‘Š5
+
+fastapi_feast_redis
+Õ·×ĞÇáˆÕ·×ĞÇáˆ’
+š
+
+user_statsfastapi_feast_redis"feature_view*´
+“
+
+user_statsfastapi_feast_redisuser"
+	orders_7d"
+avg_order_value"
+top_category2€õ$:•event_timestampZdata/user_stats.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢user_stats_source’Õ·×Ğ¥™ˆ"Õ·×àîÓ‘@b
+user_id’latest
+Õ·×ğıè‘Õ·×ğıè‘2Õ·×Èƒ£’B$034d539c-0b0f-4397-b844-0d27160c7933
