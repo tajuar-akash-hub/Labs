@@ -1,0 +1,82 @@
+[
+  {
+    "name": "README.md",
+    "path": "docs/README.md",
+    "sha": "b3b2a359d5587e14e0294fb285443ecaaebb792d",
+    "size": 5248,
+    "url": "https://api.github.com/repos/rustfs/rustfs/contents/docs/README.md?ref=main",
+    "html_url": "https://github.com/rustfs/rustfs/blob/main/docs/README.md",
+    "git_url": "https://api.github.com/repos/rustfs/rustfs/git/blobs/b3b2a359d5587e14e0294fb285443ecaaebb792d",
+    "download_url": "https://raw.githubusercontent.com/rustfs/rustfs/main/docs/README.md",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/rustfs/rustfs/contents/docs/README.md?ref=main",
+      "git": "https://api.github.com/repos/rustfs/rustfs/git/blobs/b3b2a359d5587e14e0294fb285443ecaaebb792d",
+      "html": "https://github.com/rustfs/rustfs/blob/main/docs/README.md"
+    }
+  },
+  {
+    "name": "architecture",
+    "path": "docs/architecture",
+    "sha": "d675b4e51711847ee823af888728166b2a3bae5c",
+    "size": 0,
+    "url": "https://api.github.com/repos/rustfs/rustfs/contents/docs/architecture?ref=main",
+    "html_url": "https://github.com/rustfs/rustfs/tree/main/docs/architecture",
+    "git_url": "https://api.github.com/repos/rustfs/rustfs/git/trees/d675b4e51711847ee823af888728166b2a3bae5c",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/rustfs/rustfs/contents/docs/architecture?ref=main",
+      "git": "https://api.github.com/repos/rustfs/rustfs/git/trees/d675b4e51711847ee823af888728166b2a3bae5c",
+      "html": "https://github.com/rustfs/rustfs/tree/main/docs/architecture"
+    }
+  },
+  {
+    "name": "operations",
+    "path": "docs/operations",
+    "sha": "7f2c84cc6433f6b05ab81cdbc79110d291b96cbf",
+    "size": 0,
+    "url": "https://api.github.com/repos/rustfs/rustfs/contents/docs/operations?ref=main",
+    "html_url": "https://github.com/rustfs/rustfs/tree/main/docs/operations",
+    "git_url": "https://api.github.com/repos/rustfs/rustfs/git/trees/7f2c84cc6433f6b05ab81cdbc79110d291b96cbf",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/rustfs/rustfs/contents/docs/operations?ref=main",
+      "git": "https://api.github.com/repos/rustfs/rustfs/git/trees/7f2c84cc6433f6b05ab81cdbc79110d291b96cbf",
+      "html": "https://github.com/rustfs/rustfs/tree/main/docs/operations"
+    }
+  },
+  {
+    "name": "postmortems",
+    "path": "docs/postmortems",
+    "sha": "3cb9ff7cbf8e2fccd5c76be370b23a193e3ce01e",
+    "size": 0,
+    "url": "https://api.github.com/repos/rustfs/rustfs/contents/docs/postmortems?ref=main",
+    "html_url": "https://github.com/rustfs/rustfs/tree/main/docs/postmortems",
+    "git_url": "https://api.github.com/repos/rustfs/rustfs/git/trees/3cb9ff7cbf8e2fccd5c76be370b23a193e3ce01e",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/rustfs/rustfs/contents/docs/postmortems?ref=main",
+      "git": "https://api.github.com/repos/rustfs/rustfs/git/trees/3cb9ff7cbf8e2fccd5c76be370b23a193e3ce01e",
+      "html": "https://github.com/rustfs/rustfs/tree/main/docs/postmortems"
+    }
+  },
+  {
+    "name": "testing",
+    "path": "docs/testing",
+    "sha": "69841ffa81f160708848da644d504e1f7c8620ca",
+    "size": 0,
+    "url": "https://api.github.com/repos/rustfs/rustfs/contents/docs/testing?ref=main",
+    "html_url": "https://github.com/rustfs/rustfs/tree/main/docs/testing",
+    "git_url": "https://api.github.com/repos/rustfs/rustfs/git/trees/69841ffa81f160708848da644d504e1f7c8620ca",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/rustfs/rustfs/contents/docs/testing?ref=main",
+      "git": "https://api.github.com/repos/rustfs/rustfs/git/trees/69841ffa81f160708848da644d504e1f7c8620ca",
+      "html": "https://github.com/rustfs/rustfs/tree/main/docs/testing"
+    }
+  }
+]

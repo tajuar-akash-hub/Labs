@@ -1,0 +1,10 @@
+project: kafka_feast_stream
+provider: local
+registry: data/registry.db
+online_store:
+  type: redis
+  redis_type: redis
+  connection_string: "100.80.92.205:6379,username=redis,password=redis,db=0"
+offline_store:
+  type: file
+entity_key_serialization_version: 3

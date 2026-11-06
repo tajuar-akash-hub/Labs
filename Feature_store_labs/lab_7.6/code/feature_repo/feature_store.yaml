@@ -1,0 +1,12 @@
+project: spark_feast_batch
+provider: local
+registry: s3://feast-spark-lab/registry/registry.db
+
+online_store:
+  type: redis
+  connection_string: "100.80.220.128:6379,username=redis,password=redis"
+
+offline_store:
+  type: file
+
+entity_key_serialization_version: 3

@@ -1,0 +1,29 @@
+
+G
+)
+driver"	driver_idJkafka_feast_stream
+ÕÜ¯×¨áÈbÕÜ¯×¨áÈb
+G
+)
+__dummy"
+__dummy_idJkafka_feast_stream
+ÕÜ¯×¸ß¹bÕÜ¯×ÈÓ×b1"$c40027fa-8bca-49b6-b9d9-30dbdc26722f*ÕÜ¯×è†òe2¥
+†
+driver_stats_streamkafka_feast_streamdriver"
+trips_in_window"
+avg_speed_kmh"
+distance_in_window_km2€£:event_timestampZdata/driver_stats.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢driver_stats_batch_source’ÕÜ¯×¸ëĞY"ÕÜ¯×ÈÁàa@JÏ	event_timestampŠfeast.data_source.PushSource¢driver_stats_pushÒievent_timestampZdata/driver_stats.parquet¢driver_stats_batch_source’ÕÜ¯×¸ëĞY"ÕÜ¯×ÈÁàa’ÕÜ¯×ğŞÜY"ÕÜ¯×ğÌÊab
+	driver_id’latest
+ÕÜ¯× ËïaÕÜ¯× Ëïabä	event_timestampŠfeast.data_source.PushSource¢driver_stats_pushªkafka_feast_streamÒievent_timestampZdata/driver_stats.parquet¢driver_stats_batch_source’ÕÜ¯×¸ëĞY"ÕÜ¯×¸ëĞY’ÕÜ¯×ğŞÜY"ÕÜ¯×ğÌÊab²event_timestampZdata/driver_stats.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢driver_stats_batch_sourceªkafka_feast_stream’ÕÜ¯×¸ëĞY"ÕÜ¯×ÈÁàaŠ2
+
+kafka_feast_stream
+ÕÜ¯×ø¨ZÕÜ¯×ø¨Z’•
+’
+driver_stats_streamkafka_feast_stream"feature_view*¥
+†
+driver_stats_streamkafka_feast_streamdriver"
+trips_in_window"
+avg_speed_kmh"
+distance_in_window_km2€£:event_timestampZdata/driver_stats.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢driver_stats_batch_source’ÕÜ¯×¸ëĞY"ÕÜ¯×ÈÁàa@JÏ	event_timestampŠfeast.data_source.PushSource¢driver_stats_pushÒievent_timestampZdata/driver_stats.parquet¢driver_stats_batch_source’ÕÜ¯×¸ëĞY"ÕÜ¯×ÈÁàa’ÕÜ¯×ğŞÜY"ÕÜ¯×ğÌÊab
+	driver_id’latest
+ÕÜ¯× ËïaÕÜ¯× Ëïa2ÕÜ¯×€ÔµbB$8bd7dab5-52aa-4882-ad7f-819fef1d8eb5
