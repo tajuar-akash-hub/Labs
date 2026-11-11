@@ -1,0 +1,70 @@
+Lab 02 - commands to paste into the VM terminal
+Each block is one paste. Open this file in VS Code, copy the block, paste in the terminal.
+(This file is overwritten each time: it holds ONLY the current step. VS Code reloads it automatically.)
+
+---------------------------------------------------------------------------
+STEP (current): [LAB] Chapter 5.7 - block 3 of 3 - restart broker 1, audit, chapter checks
+---------------------------------------------------------------------------
+cd ~/lab
+ssh broker-1 docker start kafka
+until [ -z "$(kafka kafka-topics $B --describe --under-replicated-partitions 2>/dev/null)" ]; do sleep 3; done
+python run_audit.py --topic lab02.incident-durable --acked acked-durable.txt
+pytest -q ~/ledgerline/checks/ep04/lab-02/test_ch5_durable.py
+
+Expect:
+  lab02.incident-durable: acked 200, readable 200, lost 0
+  3 passed
+
+---------------------------------------------------------------------------
+STEP (next): [LAB] Epilogue - End-to-End Verification (all 13 checks)
+---------------------------------------------------------------------------
+cd ~/lab && pytest -q ~/ledgerline/checks/ep04/lab-02
+
+Expect:
+  13 passed
+
+---------------------------------------------------------------------------
+STEP (after): [LAB] Epilogue - Teardown (run LAST, deletes all AWS resources)
+---------------------------------------------------------------------------
+cd ~/lab 2>/dev/null && [ -f aws.env ] && . ./aws.env
+docker rm -f ep04-tools >/dev/null 2>&1
+IDS=$(echo ${I1:-} ${I2:-} ${I3:-})
+if [ -n "$IDS" ]; then
+  aws ec2 terminate-instances --instance-ids $IDS >/dev/null
+  aws ec2 wait instance-terminated --instance-ids $IDS
+fi
+[ -n "${KEY:-}" ] && aws ec2 delete-key-pair --key-pair-id $KEY >/dev/null
+[ -n "${SG:-}" ] && aws ec2 delete-security-group --group-id $SG >/dev/null
+if [ -n "${RTB:-}" ]; then
+  for a in $(aws ec2 describe-route-tables --route-table-ids $RTB \
+      --query 'RouteTables[0].Associations[].RouteTableAssociationId' --output text); do
+    aws ec2 disassociate-route-table --association-id $a
+  done
+  aws ec2 delete-route-table --route-table-id $RTB
+fi
+if [ -n "${IGW:-}" ]; then
+  aws ec2 detach-internet-gateway --internet-gateway-id $IGW --vpc-id $VPC
+  aws ec2 delete-internet-gateway --internet-gateway-id $IGW
+fi
+[ -n "${SUBNET:-}" ] && aws ec2 delete-subnet --subnet-id $SUBNET
+[ -n "${VPC:-}" ] && aws ec2 delete-vpc --vpc-id $VPC
+F="Name=tag:Project,Values=ledgerline-ep04 Name=tag:Lab,Values=lab-02"
+echo "instances left: $(aws ec2 describe-instances --filters $F \
+  Name=instance-state-name,Values=pending,running,stopping,stopped --query 'length(Reservations)')"
+echo "VPCs left: $(aws ec2 describe-vpcs --filters $F --query 'length(Vpcs)')"
+echo "security groups left: $(aws ec2 describe-security-groups --filters $F --query 'length(SecurityGroups)')"
+echo "key pairs left: $(aws ec2 describe-key-pairs --filters $F --query 'length(KeyPairs)')"
+
+Expect:
+  instances left: 0
+  VPCs left: 0
+  security groups left: 0
+  key pairs left: 0
+
+---------------------------------------------------------------------------
+NOTE: 5.3 already needs durable_config() in ~/lab/durable_producer.py (done)
+---------------------------------------------------------------------------
+def durable_config(bootstrap: str) -> dict:
+    return producer_config(bootstrap, "all") | {
+        "enable.idempotence": True,
+    }
